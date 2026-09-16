@@ -204,20 +204,46 @@ df_all_exams = load_all_examinations()
 
 # ============ ЗАГОЛОВОК ============
 user = st.session_state.get("user", {})
-st.title("🏐 Медицинский дашборд команды")
-st.caption(f"Мониторинг состояния спортсменок в реальном времени · Пользователь: {user.get('full_name', 'Гость')}")
+user_role = user.get("role", "guest")
 
-# ============ ВКЛАДКИ ============
-tab_today, tab_dynamics, tab_exams, tab_injuries, tab_meds = st.tabs([
-    "📊 Сегодня",
-    "📈 Динамика",
-    "🏥 Осмотры",
-    "🩹 Травмы",
-    "💊 Лекарства"
-])
+st.title("🏐 Медицинский дашборд команды")
+st.caption(
+    f"Мониторинг состояния спортсменок в реальном времени · "
+    f"Пользователь: {user.get('full_name', 'Гость')} "
+    f"({user_role})"
+)
+
+# ============ ВКЛАДКИ С УЧЁТОМ РОЛИ ============
+if user_role == "coach":
+    # Тренер видит только «Сегодня» и «Динамика»
+    tab_today, tab_dynamics = st.tabs([
+        "📊 Сегодня",
+        "📈 Динамика"
+    ])
+    tab_exams = None
+    tab_injuries = None
+    tab_meds = None
+elif user_role == "masseur":
+    # Массажист видит всё, кроме лекарств
+    tab_today, tab_dynamics, tab_exams, tab_injuries = st.tabs([
+        "📊 Сегодня",
+        "📈 Динамика",
+        "🏥 Осмотры",
+        "🩹 Травмы"
+    ])
+    tab_meds = None
+else:
+    # admin, doctor — видят всё
+    tab_today, tab_dynamics, tab_exams, tab_injuries, tab_meds = st.tabs([
+        "📊 Сегодня",
+        "📈 Динамика",
+        "🏥 Осмотры",
+        "🩹 Травмы",
+        "💊 Лекарства"
+    ])
 
 # ============================================================
-# ВКЛАДКА 1: СЕГОДНЯ
+# ВКЛАДКА 1: СЕГОДНЯ (видят все)
 # ============================================================
 with tab_today:
     st.header("📊 Сводка за сегодня")
@@ -270,7 +296,7 @@ with tab_today:
         st.success("✅ Все спортсменки сдали отчёт!")
 
 # ============================================================
-# ВКЛАДКА 2: ДИНАМИКА
+# ВКЛАДКА 2: ДИНАМИКА (видят все)
 # ============================================================
 with tab_dynamics:
     st.header("📈 Динамика за последние 30 дней")
@@ -379,209 +405,212 @@ with tab_dynamics:
             st.dataframe(avg_data, use_container_width=True, hide_index=True)
 
 # ============================================================
-# ВКЛАДКА 3: ОСМОТРЫ
+# ВКЛАДКА 3: ОСМОТРЫ (видят admin, doctor, masseur)
 # ============================================================
-with tab_exams:
-    st.header("🏥 Медицинские осмотры")
-    
-    sub_view, sub_add = st.tabs(["📋 Просмотр осмотров", "✍️ Внести новый осмотр"])
-    
-    with sub_view:
-        st.subheader("⚠️ Просроченные осмотры")
-        if not df_overdue.empty:
-            st.error(f"Просрочено: {len(df_overdue)} осмотров")
-            df_overdue_formatted = format_dates(df_overdue, ["Был должен"])
-            st.dataframe(df_overdue_formatted, use_container_width=True, hide_index=True)
+if tab_exams is not None:
+    with tab_exams:
+        st.header("🏥 Медицинские осмотры")
+        
+        sub_view, sub_add = st.tabs(["📋 Просмотр осмотров", "✍️ Внести новый осмотр"])
+        
+        with sub_view:
+            st.subheader("⚠️ Просроченные осмотры")
+            if not df_overdue.empty:
+                st.error(f"Просрочено: {len(df_overdue)} осмотров")
+                df_overdue_formatted = format_dates(df_overdue, ["Был должен"])
+                st.dataframe(df_overdue_formatted, use_container_width=True, hide_index=True)
+            else:
+                st.success("✅ Все медосмотры в порядке!")
+            
+            st.divider()
+            
+            st.subheader("📋 Все осмотры (последние 50)")
+            if not df_all_exams.empty:
+                display_cols = ["examination_date", "jersey_number", "full_name", "exam_name", "is_approved", "next_exam_date", "restrictions"]
+                available_cols = [c for c in display_cols if c in df_all_exams.columns]
+                
+                df_exams_to_show = df_all_exams[available_cols].head(50).copy()
+                df_exams_to_show = format_dates(df_exams_to_show, ["examination_date", "next_exam_date"])
+                
+                df_exams_to_show = df_exams_to_show.rename(columns={
+                    "examination_date": "Дата осмотра",
+                    "jersey_number": "№",
+                    "full_name": "ФИО",
+                    "exam_name": "Осмотр",
+                    "is_approved": "Допуск",
+                    "next_exam_date": "Следующий",
+                    "restrictions": "Ограничения"
+                })
+                
+                st.dataframe(df_exams_to_show, use_container_width=True, hide_index=True)
+            else:
+                st.info("В базе пока нет ни одного осмотра. Добавьте первый через форму во второй подвкладке.")
+        
+        with sub_add:
+            st.subheader("✍️ Внести новый осмотр")
+            st.caption("Поля со звёздочкой (*) обязательны.")
+            
+            with st.form("form_add_examination", clear_on_submit=True):
+                athlete_options_form = {}
+                if not df_athletes.empty:
+                    for _, row in df_athletes.iterrows():
+                        if pd.notna(row['jersey_number']):
+                            jersey = int(row['jersey_number'])
+                            label = f"№{jersey} — {row['full_name']}"
+                        else:
+                            label = f"(без номера) {row['full_name']}"
+                        athlete_options_form[label] = row['id']
+                
+                selected_athlete_form = st.selectbox(
+                    "Спортсменка *",
+                    options=list(athlete_options_form.keys()),
+                    index=0
+                )
+                
+                template_options_form = {}
+                if not df_exam_templates.empty:
+                    for _, row in df_exam_templates.iterrows():
+                        label = f"{row['name']} ({row['specialist_type']})"
+                        template_options_form[label] = {
+                            "id": row['id'],
+                            "validity_days": row['validity_days']
+                        }
+                
+                selected_template_form = st.selectbox(
+                    "Тип осмотра *",
+                    options=list(template_options_form.keys()),
+                    index=0
+                )
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    exam_date = st.date_input(
+                        "Дата осмотра *",
+                        value=date.today(),
+                        format="DD.MM.YYYY"
+                    )
+                with col2:
+                    selected_template_data = template_options_form.get(selected_template_form, {})
+                    validity = selected_template_data.get("validity_days", 365)
+                    next_date_default = exam_date + timedelta(days=validity) if validity else exam_date
+                    next_exam_date = st.date_input(
+                        "Дата следующего осмотра",
+                        value=next_date_default,
+                        format="DD.MM.YYYY"
+                    )
+                
+                result_text = st.text_area(
+                    "Заключение врача *",
+                    placeholder="Например: Сократительная функция сердца сохранена, патологий не выявлено",
+                    height=100
+                )
+                
+                is_approved = st.radio(
+                    "Допуск получен? *",
+                    options=[True, False],
+                    format_func=lambda x: "✅ Да, допущена" if x else "❌ Нет, не допущена",
+                    horizontal=True
+                )
+                
+                restrictions = st.text_input(
+                    "Ограничения (если есть)",
+                    placeholder="Например: не играть в линзах, только очки"
+                )
+                
+                submitted = st.form_submit_button("💾 Сохранить осмотр", type="primary")
+                
+                if submitted:
+                    if not result_text or len(result_text.strip()) < 3:
+                        st.error("❌ Заполните заключение врача (минимум 3 символа)")
+                    else:
+                        try:
+                            athlete_id = athlete_options_form[selected_athlete_form]
+                            template_id = template_options_form[selected_template_form]["id"]
+                            
+                            new_exam = {
+                                "athlete_id": athlete_id,
+                                "exam_template_id": template_id,
+                                "examination_date": exam_date.isoformat(),
+                                "result_text": result_text.strip(),
+                                "is_approved": is_approved,
+                                "restrictions": restrictions.strip() if restrictions else None,
+                                "next_exam_date": next_exam_date.isoformat() if next_exam_date else None
+                            }
+                            
+                            supabase.table("examinations").insert(new_exam).execute()
+                            
+                            st.success(f"✅ Осмотр сохранён: {selected_athlete_form}")
+                            st.info("Нажмите «🔄 Обновить данные» внизу, чтобы увидеть запись в таблице.")
+                            st.cache_data.clear()
+                            
+                        except Exception as e:
+                            st.error(f"❌ Ошибка при сохранении: {e}")
+
+# ============================================================
+# ВКЛАДКА 4: ТРАВМЫ (видят admin, doctor, masseur)
+# ============================================================
+if tab_injuries is not None:
+    with tab_injuries:
+        st.header("🩹 Травмы и заболевания")
+        
+        df_injuries = load_injuries(90)
+        
+        if df_injuries.empty:
+            st.info("За последние 90 дней травм не зарегистрировано.")
         else:
-            st.success("✅ Все медосмотры в порядке!")
-        
-        st.divider()
-        
-        st.subheader("📋 Все осмотры (последние 50)")
-        if not df_all_exams.empty:
-            display_cols = ["examination_date", "jersey_number", "full_name", "exam_name", "is_approved", "next_exam_date", "restrictions"]
-            available_cols = [c for c in display_cols if c in df_all_exams.columns]
+            st.warning(f"Травм за 90 дней: {len(df_injuries)}")
             
-            df_exams_to_show = df_all_exams[available_cols].head(50).copy()
-            df_exams_to_show = format_dates(df_exams_to_show, ["examination_date", "next_exam_date"])
+            display_cols = ["incident_date", "jersey_number", "full_name", "body_part", "side", "severity", "days_lost"]
+            available_cols = [c for c in display_cols if c in df_injuries.columns]
             
-            df_exams_to_show = df_exams_to_show.rename(columns={
-                "examination_date": "Дата осмотра",
+            df_injuries_show = format_dates(df_injuries[available_cols], ["incident_date"])
+            df_injuries_show = df_injuries_show.rename(columns={
+                "incident_date": "Дата",
                 "jersey_number": "№",
                 "full_name": "ФИО",
-                "exam_name": "Осмотр",
-                "is_approved": "Допуск",
-                "next_exam_date": "Следующий",
-                "restrictions": "Ограничения"
+                "body_part": "Часть тела",
+                "side": "Сторона",
+                "severity": "Тяжесть",
+                "days_lost": "Пропущено дней"
             })
             
-            st.dataframe(df_exams_to_show, use_container_width=True, hide_index=True)
+            st.dataframe(df_injuries_show, use_container_width=True, hide_index=True)
+
+# ============================================================
+# ВКЛАДКА 5: ЛЕКАРСТВА (видят только admin и doctor)
+# ============================================================
+if tab_meds is not None:
+    with tab_meds:
+        st.header("💊 Лекарственные препараты")
+        
+        df_meds = load_medications()
+        
+        if df_meds.empty:
+            st.info("Сейчас никто не принимает лекарства.")
         else:
-            st.info("В базе пока нет ни одного осмотра. Добавьте первый через форму во второй подвкладке.")
-    
-    with sub_add:
-        st.subheader("✍️ Внести новый осмотр")
-        st.caption("Поля со звёздочкой (*) обязательны.")
-        
-        with st.form("form_add_examination", clear_on_submit=True):
-            athlete_options_form = {}
-            if not df_athletes.empty:
-                for _, row in df_athletes.iterrows():
-                    if pd.notna(row['jersey_number']):
-                        jersey = int(row['jersey_number'])
-                        label = f"№{jersey} — {row['full_name']}"
-                    else:
-                        label = f"(без номера) {row['full_name']}"
-                    athlete_options_form[label] = row['id']
+            st.warning(f"Принимают лекарства: {len(df_meds)} спортсменок")
             
-            selected_athlete_form = st.selectbox(
-                "Спортсменка *",
-                options=list(athlete_options_form.keys()),
-                index=0
-            )
+            display_cols = ["jersey_number", "full_name", "medicine_name", "dosage", "course_end", "wada_status", "tue_required"]
+            available_cols = [c for c in display_cols if c in df_meds.columns]
             
-            template_options_form = {}
-            if not df_exam_templates.empty:
-                for _, row in df_exam_templates.iterrows():
-                    label = f"{row['name']} ({row['specialist_type']})"
-                    template_options_form[label] = {
-                        "id": row['id'],
-                        "validity_days": row['validity_days']
-                    }
+            df_meds_show = format_dates(df_meds[available_cols], ["course_end"])
+            df_meds_show = df_meds_show.rename(columns={
+                "jersey_number": "№",
+                "full_name": "ФИО",
+                "medicine_name": "Препарат",
+                "dosage": "Дозировка",
+                "course_end": "До",
+                "wada_status": "WADA",
+                "tue_required": "TUE"
+            })
             
-            selected_template_form = st.selectbox(
-                "Тип осмотра *",
-                options=list(template_options_form.keys()),
-                index=0
-            )
+            st.dataframe(df_meds_show, use_container_width=True, hide_index=True)
             
-            col1, col2 = st.columns(2)
-            with col1:
-                exam_date = st.date_input(
-                    "Дата осмотра *",
-                    value=date.today(),
-                    format="DD.MM.YYYY"
-                )
-            with col2:
-                selected_template_data = template_options_form.get(selected_template_form, {})
-                validity = selected_template_data.get("validity_days", 365)
-                next_date_default = exam_date + timedelta(days=validity) if validity else exam_date
-                next_exam_date = st.date_input(
-                    "Дата следующего осмотра",
-                    value=next_date_default,
-                    format="DD.MM.YYYY"
-                )
-            
-            result_text = st.text_area(
-                "Заключение врача *",
-                placeholder="Например: Сократительная функция сердца сохранена, патологий не выявлено",
-                height=100
-            )
-            
-            is_approved = st.radio(
-                "Допуск получен? *",
-                options=[True, False],
-                format_func=lambda x: "✅ Да, допущена" if x else "❌ Нет, не допущена",
-                horizontal=True
-            )
-            
-            restrictions = st.text_input(
-                "Ограничения (если есть)",
-                placeholder="Например: не играть в линзах, только очки"
-            )
-            
-            submitted = st.form_submit_button("💾 Сохранить осмотр", type="primary")
-            
-            if submitted:
-                if not result_text or len(result_text.strip()) < 3:
-                    st.error("❌ Заполните заключение врача (минимум 3 символа)")
-                else:
-                    try:
-                        athlete_id = athlete_options_form[selected_athlete_form]
-                        template_id = template_options_form[selected_template_form]["id"]
-                        
-                        new_exam = {
-                            "athlete_id": athlete_id,
-                            "exam_template_id": template_id,
-                            "examination_date": exam_date.isoformat(),
-                            "result_text": result_text.strip(),
-                            "is_approved": is_approved,
-                            "restrictions": restrictions.strip() if restrictions else None,
-                            "next_exam_date": next_exam_date.isoformat() if next_exam_date else None
-                        }
-                        
-                        supabase.table("examinations").insert(new_exam).execute()
-                        
-                        st.success(f"✅ Осмотр сохранён: {selected_athlete_form}")
-                        st.info("Нажмите «🔄 Обновить данные» внизу, чтобы увидеть запись в таблице.")
-                        st.cache_data.clear()
-                        
-                    except Exception as e:
-                        st.error(f"❌ Ошибка при сохранении: {e}")
-
-# ============================================================
-# ВКЛАДКА 4: ТРАВМЫ
-# ============================================================
-with tab_injuries:
-    st.header("🩹 Травмы и заболевания")
-    
-    df_injuries = load_injuries(90)
-    
-    if df_injuries.empty:
-        st.info("За последние 90 дней травм не зарегистрировано.")
-    else:
-        st.warning(f"Травм за 90 дней: {len(df_injuries)}")
-        
-        display_cols = ["incident_date", "jersey_number", "full_name", "body_part", "side", "severity", "days_lost"]
-        available_cols = [c for c in display_cols if c in df_injuries.columns]
-        
-        df_injuries_show = format_dates(df_injuries[available_cols], ["incident_date"])
-        df_injuries_show = df_injuries_show.rename(columns={
-            "incident_date": "Дата",
-            "jersey_number": "№",
-            "full_name": "ФИО",
-            "body_part": "Часть тела",
-            "side": "Сторона",
-            "severity": "Тяжесть",
-            "days_lost": "Пропущено дней"
-        })
-        
-        st.dataframe(df_injuries_show, use_container_width=True, hide_index=True)
-
-# ============================================================
-# ВКЛАДКА 5: ЛЕКАРСТВА
-# ============================================================
-with tab_meds:
-    st.header("💊 Лекарственные препараты")
-    
-    df_meds = load_medications()
-    
-    if df_meds.empty:
-        st.info("Сейчас никто не принимает лекарства.")
-    else:
-        st.warning(f"Принимают лекарства: {len(df_meds)} спортсменок")
-        
-        display_cols = ["jersey_number", "full_name", "medicine_name", "dosage", "course_end", "wada_status", "tue_required"]
-        available_cols = [c for c in display_cols if c in df_meds.columns]
-        
-        df_meds_show = format_dates(df_meds[available_cols], ["course_end"])
-        df_meds_show = df_meds_show.rename(columns={
-            "jersey_number": "№",
-            "full_name": "ФИО",
-            "medicine_name": "Препарат",
-            "dosage": "Дозировка",
-            "course_end": "До",
-            "wada_status": "WADA",
-            "tue_required": "TUE"
-        })
-        
-        st.dataframe(df_meds_show, use_container_width=True, hide_index=True)
-        
-        if "wada_status" in df_meds.columns:
-            risky = df_meds[df_meds["wada_status"] != "Разрешен"]
-            if not risky.empty:
-                st.error(f"⚠️ Антидопинговый риск: {len(risky)} случаев")
-                st.dataframe(risky[available_cols], use_container_width=True, hide_index=True)
+            if "wada_status" in df_meds.columns:
+                risky = df_meds[df_meds["wada_status"] != "Разрешен"]
+                if not risky.empty:
+                    st.error(f"⚠️ Антидопинговый риск: {len(risky)} случаев")
+                    st.dataframe(risky[available_cols], use_container_width=True, hide_index=True)
 
 # ============ ВЫХОД И ОБНОВЛЕНИЕ ============
 st.divider()
