@@ -588,4 +588,46 @@ else:
                 available_cols = [c for c in display_cols if c in df_injuries.columns]
                 df_injuries_show = format_dates(df_injuries[available_cols], ["incident_date"])
                 df_injuries_show = df_injuries_show.rename(columns={
-                    "incident_date": "Дата
+                    "incident_date": "Дата", "jersey_number": "№", "full_name": "ФИО",
+                    "body_part": "Часть тела", "side": "Сторона",
+                    "severity": "Тяжесть", "days_lost": "Пропущено дней"
+                })
+                st.dataframe(df_injuries_show, use_container_width=True, hide_index=True)
+    
+    # ============ ВКЛАДКА 5: ЛЕКАРСТВА ============
+    if tab_meds is not None:
+        with tab_meds:
+            st.header("💊 Лекарственные препараты")
+            df_meds = load_medications()
+            if df_meds.empty:
+                st.info("Сейчас никто не принимает лекарства.")
+            else:
+                st.warning(f"Принимают лекарства: {len(df_meds)} спортсменок")
+                display_cols = ["jersey_number", "full_name", "medicine_name", "dosage", "course_end", "wada_status", "tue_required"]
+                available_cols = [c for c in display_cols if c in df_meds.columns]
+                df_meds_show = format_dates(df_meds[available_cols], ["course_end"])
+                df_meds_show = df_meds_show.rename(columns={
+                    "jersey_number": "№", "full_name": "ФИО", "medicine_name": "Препарат",
+                    "dosage": "Дозировка", "course_end": "До",
+                    "wada_status": "WADA", "tue_required": "TUE"
+                })
+                st.dataframe(df_meds_show, use_container_width=True, hide_index=True)
+                if "wada_status" in df_meds.columns:
+                    risky = df_meds[df_meds["wada_status"] != "Разрешен"]
+                    if not risky.empty:
+                        st.error(f"⚠️ Антидопинговый риск: {len(risky)} случаев")
+
+# ============ ВЫХОД И ОБНОВЛЕНИЕ ============
+st.divider()
+col1, col2 = st.columns([4, 1])
+with col1:
+    if st.button("🔄 Обновить данные"):
+        st.cache_data.clear()
+        st.rerun()
+with col2:
+    if st.button("🚪 Выйти"):
+        st.session_state["authenticated"] = False
+        st.session_state.pop("user", None)
+        st.rerun()
+
+st.caption(f"Последнее обновление: {pd.Timestamp.now().strftime('%H:%M:%S')}")
