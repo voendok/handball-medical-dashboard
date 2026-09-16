@@ -6,6 +6,28 @@ import streamlit as st
 import pandas as pd
 from datetime import date, timedelta
 from supabase import create_client
+import streamlit as st
+from streamlit_supabase_auth_ui.widgets import __login__
+
+# ============ АВТОРИЗАЦИЯ ============
+__login__obj = __login__(
+    auth_token = st.secrets["courier_auth_token"],
+    company_name = "Гандбол",
+    width = 200,
+    height = 250,
+    logout_button_name = 'Выйти',
+    hide_menu_bool = False,
+    hide_footer_bool = False,
+    lottie_url = 'https://assets2.lottiefiles.com/packages/lf20_jcikwtux.json'
+)
+
+LOGGED_IN = __login__obj.build_login_ui()
+
+if LOGGED_IN != True:
+    st.stop()
+
+# ====== ДАЛЬШЕ ИДЁТ ВАШ СУЩЕСТВУЮЩИЙ КОД ======
+# (всё что было раньше — st.set_page_config, st.title и т.д.)
 
 def format_dates(df, date_columns):
     """Преобразует колонки с датами из ISO (2026-09-16) в формат ДД.ММ.ГГГГ"""
