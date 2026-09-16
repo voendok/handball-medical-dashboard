@@ -1,44 +1,8 @@
 import streamlit as st
 import pandas as pd
+import hashlib
 from datetime import date, timedelta
 from supabase import create_client
-import streamlit as st
-import pandas as pd
-from datetime import date, timedelta
-from supabase import create_client
-import streamlit as st
-from streamlit_supabase_auth_ui.widgets import __login__
-
-# ============ АВТОРИЗАЦИЯ ============
-__login__obj = __login__(
-    auth_token = st.secrets["courier_auth_token"],
-    company_name = "Гандбол",
-    width = 200,
-    height = 250,
-    logout_button_name = 'Выйти',
-    hide_menu_bool = False,
-    hide_footer_bool = False,
-    lottie_url = 'https://assets2.lottiefiles.com/packages/lf20_jcikwtux.json'
-)
-
-LOGGED_IN = __login__obj.build_login_ui()
-
-if LOGGED_IN != True:
-    st.stop()
-
-# ====== ДАЛЬШЕ ИДЁТ ВАШ СУЩЕСТВУЮЩИЙ КОД ======
-# (всё что было раньше — st.set_page_config, st.title и т.д.)
-
-def format_dates(df, date_columns):
-    """Преобразует колонки с датами из ISO (2026-09-16) в формат ДД.ММ.ГГГГ"""
-    if df.empty:
-        return df
-    df = df.copy()
-    for col in date_columns:
-        if col in df.columns:
-            df[col] = pd.to_datetime(df[col], errors='coerce').dt.strftime('%d.%m.%Y')
-            df[col] = df[col].fillna('')
-    return df
 
 # ============ НАСТРОЙКА СТРАНИЦЫ ============
 st.set_page_config(
@@ -55,6 +19,70 @@ def init_supabase():
     return create_client(url, key)
 
 supabase = init_supabase()
+
+# ============ АВТОРИЗАЦИЯ (нативная через Supabase) ============
+def hash_password(password: str) -> str:
+    """Простой SHA-256 хеш пароля"""
+    return hashlib.sha256(password.encode()).hexdigest()
+
+
+def check_login(username: str, password: str):
+    """Проверяет логин и пароль, возвращает данные пользователя или None"""
+    try:
+        response = (
+            supabase.table("app_users")
+            .select("*")
+            .eq("username", username)
+            .eq("is_active", True)
+            .execute()
+        )
+        if response.data and len(response.data) > 0:
+            user = response.data[0]
+            if user["password_hash"] == hash_password(password):
+                return user
+        return None
+    except Exception as e:
+        st.error(f"Ошибка авторизации: {e}")
+        return None
+
+
+def login_screen():
+    """Отображает форму входа"""
+    st.title("🏐 Медицинский дашборд")
+    st.subheader("Вход в систему")
+    
+    with st.form("login_form"):
+        username = st.text_input("Логин")
+        password = st.text_input("Пароль", type="password")
+        submitted = st.form_submit_button("Войти", type="primary")
+        
+        if submitted:
+            user = check_login(username, password)
+            if user:
+                st.session_state["authenticated"] = True
+                st.session_state["user"] = user
+                st.rerun()
+            else:
+                st.error("❌ Неверный логин или пароль")
+
+
+# Проверка авторизации
+if not st.session_state.get("authenticated", False):
+    login_screen()
+    st.stop()
+
+# ============ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ============
+def format_dates(df, date_columns):
+    """Преобразует колонки с датами из ISO (2026-09-16) в формат ДД.ММ.ГГГГ"""
+    if df.empty:
+        return df
+    df = df.copy()
+    for col in date_columns:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], errors='coerce').dt.strftime('%d.%m.%Y')
+            df[col] = df[col].fillna('')
+    return df
+
 
 # ============ ФУНКЦИИ ЗАГРУЗКИ ДАННЫХ ============
 @st.cache_data(ttl=60)
@@ -140,7 +168,6 @@ def load_medications():
 
 @st.cache_data(ttl=300)
 def load_exam_templates():
-    """Загружает справочник шаблонов осмотров"""
     response = (
         supabase.table("dict_exam_templates")
         .select("id, name, specialist_type, validity_days, is_mandatory")
@@ -151,7 +178,6 @@ def load_exam_templates():
 
 @st.cache_data(ttl=60)
 def load_all_examinations():
-    """Загружает все осмотры спортсменок"""
     response = (
         supabase.table("examinations")
         .select("*, athletes(full_name, jersey_number), dict_exam_templates(name, specialist_type)")
@@ -166,6 +192,7 @@ def load_all_examinations():
         df = df.drop(columns=["athletes", "dict_exam_templates"])
     return df
 
+
 # ============ ЗАГРУЗКА ВСЕХ ДАННЫХ ============
 df_dashboard = load_today_dashboard()
 df_missing = load_missing_reports()
@@ -176,8 +203,9 @@ df_exam_templates = load_exam_templates()
 df_all_exams = load_all_examinations()
 
 # ============ ЗАГОЛОВОК ============
+user = st.session_state.get("user", {})
 st.title("🏐 Медицинский дашборд команды")
-st.caption("Мониторинг состояния спортсменок в реальном времени")
+st.caption(f"Мониторинг состояния спортсменок в реальном времени · Пользователь: {user.get('full_name', 'Гость')}")
 
 # ============ ВКЛАДКИ ============
 tab_today, tab_dynamics, tab_exams, tab_injuries, tab_meds = st.tabs([
@@ -351,14 +379,13 @@ with tab_dynamics:
             st.dataframe(avg_data, use_container_width=True, hide_index=True)
 
 # ============================================================
-# ВКЛАДКА 3: ОСМОТРЫ (С ФОРМОЙ ДЛЯ ВРАЧА)
+# ВКЛАДКА 3: ОСМОТРЫ
 # ============================================================
 with tab_exams:
     st.header("🏥 Медицинские осмотры")
     
     sub_view, sub_add = st.tabs(["📋 Просмотр осмотров", "✍️ Внести новый осмотр"])
     
-    # ============ ПОДВКЛАДКА: ПРОСМОТР ============
     with sub_view:
         st.subheader("⚠️ Просроченные осмотры")
         if not df_overdue.empty:
@@ -378,7 +405,6 @@ with tab_exams:
             df_exams_to_show = df_all_exams[available_cols].head(50).copy()
             df_exams_to_show = format_dates(df_exams_to_show, ["examination_date", "next_exam_date"])
             
-            # Переименовываем заголовки для красоты
             df_exams_to_show = df_exams_to_show.rename(columns={
                 "examination_date": "Дата осмотра",
                 "jersey_number": "№",
@@ -393,7 +419,6 @@ with tab_exams:
         else:
             st.info("В базе пока нет ни одного осмотра. Добавьте первый через форму во второй подвкладке.")
     
-    # ============ ПОДВКЛАДКА: ДОБАВЛЕНИЕ ============
     with sub_add:
         st.subheader("✍️ Внести новый осмотр")
         st.caption("Поля со звёздочкой (*) обязательны.")
@@ -433,7 +458,7 @@ with tab_exams:
             col1, col2 = st.columns(2)
             with col1:
                 exam_date = st.date_input(
-                    "Дата осмотра *", 
+                    "Дата осмотра *",
                     value=date.today(),
                     format="DD.MM.YYYY"
                 )
@@ -442,7 +467,7 @@ with tab_exams:
                 validity = selected_template_data.get("validity_days", 365)
                 next_date_default = exam_date + timedelta(days=validity) if validity else exam_date
                 next_exam_date = st.date_input(
-                    "Дата следующего осмотра", 
+                    "Дата следующего осмотра",
                     value=next_date_default,
                     format="DD.MM.YYYY"
                 )
@@ -493,6 +518,7 @@ with tab_exams:
                         
                     except Exception as e:
                         st.error(f"❌ Ошибка при сохранении: {e}")
+
 # ============================================================
 # ВКЛАДКА 4: ТРАВМЫ
 # ============================================================
@@ -551,16 +577,23 @@ with tab_meds:
         
         st.dataframe(df_meds_show, use_container_width=True, hide_index=True)
         
-        # Антидопинговый контроль
         if "wada_status" in df_meds.columns:
             risky = df_meds[df_meds["wada_status"] != "Разрешен"]
             if not risky.empty:
                 st.error(f"⚠️ Антидопинговый риск: {len(risky)} случаев")
                 st.dataframe(risky[available_cols], use_container_width=True, hide_index=True)
-# ============ ОБНОВЛЕНИЕ ============
+
+# ============ ВЫХОД И ОБНОВЛЕНИЕ ============
 st.divider()
-if st.button("🔄 Обновить данные"):
-    st.cache_data.clear()
-    st.rerun()
+col1, col2 = st.columns([4, 1])
+with col1:
+    if st.button("🔄 Обновить данные"):
+        st.cache_data.clear()
+        st.rerun()
+with col2:
+    if st.button("🚪 Выйти"):
+        st.session_state["authenticated"] = False
+        st.session_state.pop("user", None)
+        st.rerun()
 
 st.caption(f"Последнее обновление: {pd.Timestamp.now().strftime('%H:%M:%S')}")
