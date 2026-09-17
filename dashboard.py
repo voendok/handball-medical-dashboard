@@ -581,6 +581,153 @@ else:
                             st.markdown(f"**🚨 Экстренный контакт:** {row.get('emergency_contact', '—')} · {row.get('emergency_phone', '—')}")
                         st.markdown(f"**⚠️ Аллергии:** {row.get('allergies') or '—'}")
                         st.markdown(f"**📝 Заметки врача:** {row.get('medical_notes') or '—'}")
+                        st.divider()
+                        st.subheader(f"🗂️ Медицинская карта: {row.get('full_name', '')}")
+
+                        mc_tabs = st.tabs([
+                            "🩺 Приёмы", "🏥 Осмотры", "🩹 Травмы", "💊 Лекарства",
+                            "💉 Прививки", "📏 Антропометрия", "🏃 Тесты",
+                            "🩺 Хроники", "🧪 Анализы"
+                        ])
+                        (mc_visits, mc_exams, mc_injuries, mc_meds,
+                         mc_vacc, mc_anthro, mc_tests, mc_chronic, mc_lab) = mc_tabs
+
+                        mc_aid = selected_aid  # текущая выбранная спортсменка
+
+                        # --- Приёмы ---
+                        with mc_visits:
+                            if not df_visits.empty and "athlete_id" in df_visits.columns:
+                                my = df_visits[df_visits["athlete_id"] == mc_aid]
+                            else:
+                                my = pd.DataFrame()
+                            if my.empty:
+                                st.info("Приёмов нет.")
+                            else:
+                                cols = ["visit_date", "complaints", "diagnosis", "prescriptions"]
+                                av = [c for c in cols if c in my.columns]
+                                d = format_dates(my[av].copy(), ["visit_date"])
+                                d = d.rename(columns={"visit_date": "Дата", "complaints": "Жалобы", "diagnosis": "Диагноз", "prescriptions": "Назначения"})
+                                st.dataframe(d, use_container_width=True, hide_index=True)
+
+                        # --- Осмотры ---
+                        with mc_exams:
+                            if not df_all_exams.empty and "athlete_id" in df_all_exams.columns:
+                                my = df_all_exams[df_all_exams["athlete_id"] == mc_aid]
+                            else:
+                                my = pd.DataFrame()
+                            if my.empty:
+                                st.info("Осмотров нет.")
+                            else:
+                                cols = ["examination_date", "exam_name", "is_approved", "next_exam_date", "restrictions"]
+                                av = [c for c in cols if c in my.columns]
+                                d = format_dates(my[av].copy(), ["examination_date", "next_exam_date"])
+                                d = d.rename(columns={"examination_date": "Дата", "exam_name": "Осмотр", "is_approved": "Допуск", "next_exam_date": "Следующий", "restrictions": "Ограничения"})
+                                st.dataframe(d, use_container_width=True, hide_index=True)
+
+                        # --- Травмы (все) ---
+                        with mc_injuries:
+                            if not df_injuries_all.empty and "athlete_id" in df_injuries_all.columns:
+                                my = df_injuries_all[df_injuries_all["athlete_id"] == mc_aid]
+                            else:
+                                my = pd.DataFrame()
+                            if my.empty:
+                                st.info("Травм нет.")
+                            else:
+                                cols = ["incident_date", "diagnosis", "body_part", "side", "severity", "days_lost"]
+                                av = [c for c in cols if c in my.columns]
+                                d = format_dates(my[av].copy(), ["incident_date"])
+                                d = d.rename(columns={"incident_date": "Дата", "diagnosis": "Диагноз", "body_part": "Часть тела", "side": "Сторона", "severity": "Тяжесть", "days_lost": "Пропущено"})
+                                st.dataframe(d, use_container_width=True, hide_index=True)
+
+                        # --- Лекарства ---
+                        with mc_meds:
+                            if not df_meds_current.empty and "athlete_id" in df_meds_current.columns:
+                                my = df_meds_current[df_meds_current["athlete_id"] == mc_aid]
+                            else:
+                                my = pd.DataFrame()
+                            if my.empty:
+                                st.info("Назначений нет.")
+                            else:
+                                cols = ["medicine_name", "dosage", "frequency", "course_start", "course_end", "wada_status"]
+                                av = [c for c in cols if c in my.columns]
+                                d = format_dates(my[av].copy(), ["course_start", "course_end"])
+                                d = d.rename(columns={"medicine_name": "Препарат", "dosage": "Дозировка", "frequency": "Кратность", "course_start": "С", "course_end": "По", "wada_status": "WADA"})
+                                st.dataframe(d, use_container_width=True, hide_index=True)
+
+                        # --- Прививки ---
+                        with mc_vacc:
+                            if not df_vaccinations.empty and "athlete_id" in df_vaccinations.columns:
+                                my = df_vaccinations[df_vaccinations["athlete_id"] == mc_aid]
+                            else:
+                                my = pd.DataFrame()
+                            if my.empty:
+                                st.info("Прививок нет.")
+                            else:
+                                cols = ["vaccination_date", "vaccine_name", "booster_date", "batch_number"]
+                                av = [c for c in cols if c in my.columns]
+                                d = format_dates(my[av].copy(), ["vaccination_date", "booster_date"])
+                                d = d.rename(columns={"vaccination_date": "Дата", "vaccine_name": "Вакцина", "booster_date": "Ревакцинация", "batch_number": "Серия"})
+                                st.dataframe(d, use_container_width=True, hide_index=True)
+
+                        # --- Антропометрия ---
+                        with mc_anthro:
+                            if not df_anthro.empty and "athlete_id" in df_anthro.columns:
+                                my = df_anthro[df_anthro["athlete_id"] == mc_aid]
+                            else:
+                                my = pd.DataFrame()
+                            if my.empty:
+                                st.info("Измерений нет.")
+                            else:
+                                cols = ["measurement_date", "height", "weight", "bmi", "body_fat", "muscle_mass"]
+                                av = [c for c in cols if c in my.columns]
+                                d = format_dates(my[av].copy(), ["measurement_date"])
+                                d = d.rename(columns={"measurement_date": "Дата", "height": "Рост", "weight": "Вес", "bmi": "ИМТ", "body_fat": "% жира", "muscle_mass": "Мышцы"})
+                                st.dataframe(d, use_container_width=True, hide_index=True)
+
+                        # --- Тесты ---
+                        with mc_tests:
+                            if not df_tests.empty and "athlete_id" in df_tests.columns:
+                                my = df_tests[df_tests["athlete_id"] == mc_aid]
+                            else:
+                                my = pd.DataFrame()
+                            if my.empty:
+                                st.info("Тестов нет.")
+                            else:
+                                cols = ["test_date", "test_name", "result_raw", "result_score", "evaluation"]
+                                av = [c for c in cols if c in my.columns]
+                                d = format_dates(my[av].copy(), ["test_date"])
+                                d = d.rename(columns={"test_date": "Дата", "test_name": "Тест", "result_raw": "Результат", "result_score": "Балл", "evaluation": "Оценка"})
+                                st.dataframe(d, use_container_width=True, hide_index=True)
+
+                        # --- Хроники ---
+                        with mc_chronic:
+                            if not df_chronic.empty and "athlete_id" in df_chronic.columns:
+                                my = df_chronic[df_chronic["athlete_id"] == mc_aid]
+                            else:
+                                my = pd.DataFrame()
+                            if my.empty:
+                                st.info("Хроник нет.")
+                            else:
+                                cols = ["diagnosis_date", "disease_name", "severity", "current_medication"]
+                                av = [c for c in cols if c in my.columns]
+                                d = format_dates(my[av].copy(), ["diagnosis_date"])
+                                d = d.rename(columns={"diagnosis_date": "Дата", "disease_name": "Заболевание", "severity": "Тяжесть", "current_medication": "Лекарства"})
+                                st.dataframe(d, use_container_width=True, hide_index=True)
+
+                        # --- Анализы ---
+                        with mc_lab:
+                            if not df_lab.empty and "athlete_id" in df_lab.columns:
+                                my = df_lab[df_lab["athlete_id"] == mc_aid]
+                            else:
+                                my = pd.DataFrame()
+                            if my.empty:
+                                st.info("Анализов нет.")
+                            else:
+                                cols = ["measurement_date", "biomarker_name", "value", "unit"]
+                                av = [c for c in cols if c in my.columns]
+                                d = format_dates(my[av].copy(), ["measurement_date"])
+                                d = d.rename(columns={"measurement_date": "Дата", "biomarker_name": "Показатель", "value": "Значение", "unit": "Ед."})
+                                st.dataframe(d, use_container_width=True, hide_index=True)
                     else:
                         st.info("👆 Выберите спортсменку в таблице или в списке выше")
 
