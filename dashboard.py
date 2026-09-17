@@ -487,6 +487,12 @@ else:
                     cols_show = ["jersey_number", "full_name", "birth_date", "blood_type", "rh_factor", "handball_start_year", "phone"]
                     av = [c for c in cols_show if c in df_athletes_full.columns]
                     d = df_athletes_full[av].copy()
+                    # Вычисляем возраст
+                    if "birth_date" in d.columns:
+                        d["Возраст"] = pd.to_datetime(d["birth_date"], errors='coerce').apply(
+                            lambda x: date.today().year - x.year - ((date.today().month, date.today().day) < (x.month, x.day)) if pd.notna(x) else None
+                        )
+                    # Стаж
                     if "handball_start_year" in d.columns:
                         d["Стаж"] = date.today().year - d["handball_start_year"]
                     d = d.rename(columns={
@@ -496,7 +502,10 @@ else:
                     })
                     if "Дата рождения" in d.columns:
                         d["Дата рождения"] = pd.to_datetime(d["Дата рождения"], errors='coerce').dt.strftime('%d.%m.%Y')
-                    st.dataframe(d, use_container_width=True, hide_index=True)
+                    # Порядок колонок: №, ФИО, Дата рождения, Возраст, Кровь, Резус, Год начала, Стаж, Телефон
+                    desired_order = ["№", "ФИО", "Дата рождения", "Возраст", "Кровь", "Резус", "Год начала", "Стаж", "Телефон"]
+                    final_cols = [c for c in desired_order if c in d.columns]
+                    st.dataframe(d[final_cols], use_container_width=True, hide_index=True))
 
                     st.divider()
                     st.subheader("👁️ Детальная карточка")
@@ -506,18 +515,24 @@ else:
                         aid = opts[sel]
                         row = df_athletes_full[df_athletes_full["id"] == aid].iloc[0]
                         c1, c2 = st.columns(2)
-                        with c1:
+                           with c1:
                             st.markdown(f"**ФИО:** {row.get('full_name', '—')}")
                             bd = pd.to_datetime(row.get('birth_date')).strftime('%d.%m.%Y') if pd.notna(row.get('birth_date')) else '—'
                             st.markdown(f"**Дата рождения:** {bd}")
+                            # Вычисляем возраст
+                            if pd.notna(row.get('birth_date')):
+                                bd_dt = pd.to_datetime(row['birth_date'])
+                                today = pd.Timestamp.today()
+                                age = today.year - bd_dt.year - ((today.month, today.day) < (bd_dt.month, bd_dt.day))
+                                st.markdown(f"**Возраст:** {age} лет")
+                            else:
+                                st.markdown(f"**Возраст:** —")
                             st.markdown(f"**Игровой номер:** {int(row['jersey_number']) if pd.notna(row.get('jersey_number')) else '—'}")
                             st.markdown(f"**Телефон:** {row.get('phone', '—')}")
                             st.markdown(f"**Адрес:** {row.get('address', '—')}")
                         with c2:
                             st.markdown(f"**Группа крови:** {row.get('blood_type', '—')}")
                             st.markdown(f"**Резус:** {row.get('rh_factor', '—')}")
-                            st.markdown(f"**Полис ОМС:** {row.get('medical_policy_number', '—')}")
-                            st.markdown(f"**СНИЛС:** {row.get('snils', '—')}")
                             st.markdown(f"**Год начала занятий:** {int(row['handball_start_year']) if pd.notna(row.get('handball_start_year')) else '—'}")
                         st.divider()
                         st.markdown(f"**🚨 Экстренный контакт:** {row.get('emergency_contact', '—')} · {row.get('emergency_phone', '—')}")
@@ -549,10 +564,7 @@ else:
                                     hy = st.number_input("Год начала занятий гандболом", min_value=1950, max_value=date.today().year, value=int(cur["handball_start_year"]) if pd.notna(cur.get("handball_start_year")) else date.today().year)
                                 with c2:
                                     phone = st.text_input("Телефон", value=cur.get("phone", "") or "")
-                                    address = st.text_input("Адрес", value=cur.get("address", "") or "")
-                                    policy = st.text_input("Полис ОМС", value=cur.get("medical_policy_number", "") or "")
-                                    snils = st.text_input("СНИЛС", value=cur.get("snils", "") or "")
-
+                                    address = st.text_input("Адрес", value=cur.get("address", "") or "")                                    
                                 st.markdown("### 🩸 Медицинские данные")
                                 c3, c4 = st.columns(2)
                                 with c3:
@@ -585,9 +597,7 @@ else:
                                                 "jersey_number": int(jersey) if jersey > 0 else None,
                                                 "handball_start_year": int(hy),
                                                 "phone": phone.strip() or None,
-                                                "address": address.strip() or None,
-                                                "medical_policy_number": policy.strip() or None,
-                                                "snils": snils.strip() or None,
+                                                "address": address.strip() or None,                                               
                                                 "blood_type": blood_type if blood_type != "— не указана —" else None,
                                                 "rh_factor": rh if rh != "— не указан —" else None,
                                                 "emergency_contact": emergency_contact.strip() or None,
@@ -613,9 +623,7 @@ else:
                         with c2:
                             phone = st.text_input("Телефон", placeholder="+375 29 123-45-67")
                             address = st.text_input("Адрес")
-                            policy = st.text_input("Полис ОМС")
-                            snils = st.text_input("СНИЛС")
-
+                           
                         st.markdown("### 🩸 Медицинские данные")
                         c3, c4 = st.columns(2)
                         with c3:
@@ -644,8 +652,6 @@ else:
                                         "handball_start_year": int(hy),
                                         "phone": phone.strip() or None,
                                         "address": address.strip() or None,
-                                        "medical_policy_number": policy.strip() or None,
-                                        "snils": snils.strip() or None,
                                         "blood_type": blood_type if blood_type != "— не указана —" else None,
                                         "rh_factor": rh if rh != "— не указан —" else None,
                                         "emergency_contact": emergency_contact.strip() or None,
