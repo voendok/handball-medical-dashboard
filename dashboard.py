@@ -505,7 +505,7 @@ else:
                     # Порядок колонок: №, ФИО, Дата рождения, Возраст, Кровь, Резус, Год начала, Стаж, Телефон
                     desired_order = ["№", "ФИО", "Дата рождения", "Возраст", "Кровь", "Резус", "Год начала", "Стаж", "Телефон"]
                     final_cols = [c for c in desired_order if c in d.columns]
-                    st.dataframe(d[final_cols], use_container_width=True, hide_index=True))
+                    st.dataframe(d[final_cols], use_container_width=True, hide_index=True)
 
                     st.divider()
                     st.subheader("👁️ Детальная карточка")
