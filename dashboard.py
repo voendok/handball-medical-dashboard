@@ -379,13 +379,13 @@ else:
     if user_role == "coach":
         tabs = st.tabs(["📊 Сегодня", "📈 Динамика"])
         tab_today, tab_dynamics = tabs
-        tab_cards = tab_visits = tab_exams = tab_injuries = None
+        tab_cards = tab_medcard = tab_visits = tab_exams = tab_injuries = None
         tab_meds = tab_vaccines = tab_anthro = tab_tests = None
         tab_chronic = tab_lab = None
     elif user_role == "masseur":
         tabs = st.tabs(["📊 Сегодня", "📈 Динамика", "🩹 Травмы", "📏 Антропометрия"])
         tab_today, tab_dynamics, tab_injuries, tab_anthro = tabs
-        tab_cards = tab_visits = tab_exams = None
+        tab_cards = tab_medcard = tab_visits = tab_exams = None
         tab_meds = tab_vaccines = tab_tests = tab_chronic = tab_lab = None
     else:
         tabs = st.tabs([
