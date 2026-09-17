@@ -317,62 +317,71 @@ if user_role == "athlete" and user_athlete_id:
 
     with tab_status:
         st.header("📊 Мой статус на сегодня")
-        my_row = df_athletes[df_athletes["id"] == user_athlete_id]
-        my_jersey = int(my_row["jersey_number"].iloc[0]) if not my_row.empty and pd.notna(my_row["jersey_number"].iloc[0]) else None
-        my_dashboard = df_dashboard[df_dashboard["№"] == my_jersey] if my_jersey else pd.DataFrame()
-        if not my_dashboard.empty:
-            r = my_dashboard.iloc[0]
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Статус", f"{r.get('icon', '⚪')} {r.get('status', 'grey')}")
-            c2.metric("Пульс", r.get("Пульс", "—"))
-            c3.metric("Разница", r.get("Разница", "—"))
-            c4.metric("Сон", r.get("Сон", "—"))
-            if "Причина" in r and pd.notna(r["Причина"]):
-                st.info(f"**Причина:** {r['Причина']}")
+        if df_athletes.empty or "id" not in df_athletes.columns:
+            st.info("Нет данных о спортсменке.")
         else:
-            st.info("📭 Сегодня вы ещё не отправляли утренний отчёт.")
+            my_row = df_athletes[df_athletes["id"] == user_athlete_id]
+            my_jersey = int(my_row["jersey_number"].iloc[0]) if not my_row.empty and pd.notna(my_row["jersey_number"].iloc[0]) else None
+            my_dashboard = df_dashboard[df_dashboard["№"] == my_jersey] if my_jersey and not df_dashboard.empty else pd.DataFrame()
+            if not my_dashboard.empty:
+                r = my_dashboard.iloc[0]
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Статус", f"{r.get('icon', '⚪')} {r.get('status', 'grey')}")
+                c2.metric("Пульс", r.get("Пульс", "—"))
+                c3.metric("Разница", r.get("Разница", "—"))
+                c4.metric("Сон", r.get("Сон", "—"))
+                if "Причина" in r and pd.notna(r["Причина"]):
+                    st.info(f"**Причина:** {r['Причина']}")
+            else:
+                st.info("📭 Сегодня вы ещё не отправляли утренний отчёт.")
 
     with tab_dynamics:
         st.header("📈 Моя динамика за 30 дней")
-        my_logs = df_logs[df_logs["athlete_id"] == user_athlete_id]
-        if my_logs.empty:
+        if df_logs.empty or "athlete_id" not in df_logs.columns:
             st.info("Нет данных за 30 дней.")
         else:
-            dfc = my_logs[["log_date", "morning_hr", "ortho_hr_after", "sleep_hours", "borg_rating"]].sort_values("log_date").set_index("log_date")
-            c1, c2 = st.columns(2)
-            with c1:
-                st.subheader("❤️ Пульс")
-                if dfc["morning_hr"].notna().any():
-                    d = dfc[["morning_hr"]].dropna()
-                    d.columns = ["Пульс утром"]
-                    st.line_chart(d, use_container_width=True)
-            with c2:
-                st.subheader("😴 Сон")
-                if dfc["sleep_hours"].notna().any():
-                    d = dfc[["sleep_hours"]].dropna()
-                    d.columns = ["Часы сна"]
-                    st.line_chart(d, use_container_width=True)
-            st.subheader("📊 Ортостатическая разница")
-            o = dfc[["morning_hr", "ortho_hr_after"]].dropna()
-            if not o.empty:
-                o["Разница"] = o["ortho_hr_after"] - o["morning_hr"]
-                st.line_chart(o[["Разница"]], use_container_width=True)
+            my_logs = df_logs[df_logs["athlete_id"] == user_athlete_id]
+            if my_logs.empty:
+                st.info("Нет данных за 30 дней.")
+            else:
+                dfc = my_logs[["log_date", "morning_hr", "ortho_hr_after", "sleep_hours", "borg_rating"]].sort_values("log_date").set_index("log_date")
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.subheader("❤️ Пульс")
+                    if dfc["morning_hr"].notna().any():
+                        d = dfc[["morning_hr"]].dropna()
+                        d.columns = ["Пульс утром"]
+                        st.line_chart(d, use_container_width=True)
+                with c2:
+                    st.subheader("😴 Сон")
+                    if dfc["sleep_hours"].notna().any():
+                        d = dfc[["sleep_hours"]].dropna()
+                        d.columns = ["Часы сна"]
+                        st.line_chart(d, use_container_width=True)
+                st.subheader("📊 Ортостатическая разница")
+                o = dfc[["morning_hr", "ortho_hr_after"]].dropna()
+                if not o.empty:
+                    o["Разница"] = o["ortho_hr_after"] - o["morning_hr"]
+                    st.line_chart(o[["Разница"]], use_container_width=True)
 
     with tab_exams_self:
         st.header("🏥 Мои медицинские осмотры")
-        my_exams = df_all_exams[df_all_exams["athlete_id"] == user_athlete_id]
-        if my_exams.empty:
+        if df_all_exams.empty or "athlete_id" not in df_all_exams.columns:
             st.info("Осмотры пока не внесены.")
         else:
-            cols = ["examination_date", "exam_name", "is_approved", "next_exam_date", "restrictions"]
-            av = [c for c in cols if c in my_exams.columns]
-            d = format_dates(my_exams[av].copy(), ["examination_date", "next_exam_date"])
-            d = d.rename(columns={
-                "examination_date": "Дата", "exam_name": "Осмотр",
-                "is_approved": "Допуск", "next_exam_date": "Следующий",
-                "restrictions": "Ограничения"
-            })
-            st.dataframe(d, use_container_width=True, hide_index=True)
+            my_exams = df_all_exams[df_all_exams["athlete_id"] == user_athlete_id]
+            if my_exams.empty:
+                st.info("Осмотры пока не внесены.")
+            else:
+                cols = ["examination_date", "exam_name", "is_approved", "next_exam_date", "restrictions"]
+                av = [c for c in cols if c in my_exams.columns]
+                d = format_dates(my_exams[av].copy(), ["examination_date", "next_exam_date"])
+                d = d.rename(columns={
+                    "examination_date": "Дата", "exam_name": "Осмотр",
+                    "is_approved": "Допуск", "next_exam_date": "Следующий",
+                    "restrictions": "Ограничения"
+                })
+                st.dataframe(d, use_container_width=True, hide_index=True)
 
 # ============ ДАШБОРД ВРАЧА / ТРЕНЕРА / АДМИНА ============
 else:
