@@ -4,19 +4,12 @@ import hashlib
 from datetime import date, timedelta
 from supabase import create_client
 
-# ============ НАСТРОЙКА СТРАНИЦЫ ============
-st.set_page_config(
-    page_title="Медицинский дашборд — Гандбол",
-    page_icon="🏐",
-    layout="wide"
-)
+# ============ НАСТРОЙКА ============
+st.set_page_config(page_title="Медицинский дашборд — Гандбол", page_icon="🏐", layout="wide")
 
-# ============ ПОДКЛЮЧЕНИЕ К SUPABASE ============
 @st.cache_resource
 def init_supabase():
-    url = st.secrets["SUPABASE_URL"]
-    key = st.secrets["SUPABASE_KEY"]
-    return create_client(url, key)
+    return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
 supabase = init_supabase()
 
@@ -24,16 +17,9 @@ supabase = init_supabase()
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
 
-
 def check_login(username: str, password: str):
     try:
-        response = (
-            supabase.table("app_users")
-            .select("*")
-            .eq("username", username)
-            .eq("is_active", True)
-            .execute()
-        )
+        response = supabase.table("app_users").select("*").eq("username", username).eq("is_active", True).execute()
         if response.data and len(response.data) > 0:
             user = response.data[0]
             if user["password_hash"] == hash_password(password):
@@ -43,16 +29,13 @@ def check_login(username: str, password: str):
         st.error(f"Ошибка авторизации: {e}")
         return None
 
-
 def login_screen():
     st.title("🏐 Медицинский дашборд")
     st.subheader("Вход в систему")
-    
     with st.form("login_form"):
         username = st.text_input("Логин")
         password = st.text_input("Пароль", type="password")
         submitted = st.form_submit_button("Войти", type="primary")
-        
         if submitted:
             user = check_login(username, password)
             if user:
@@ -62,7 +45,6 @@ def login_screen():
             else:
                 st.error("❌ Неверный логин или пароль")
 
-
 if not st.session_state.get("authenticated", False):
     login_screen()
     st.stop()
@@ -71,7 +53,7 @@ user = st.session_state.get("user", {})
 user_role = user.get("role", "guest")
 user_athlete_id = user.get("athlete_id")
 
-# ============ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ============
+# ============ ВСПОМОГАТЕЛЬНЫЕ ============
 def format_dates(df, date_columns):
     if df.empty:
         return df
@@ -82,45 +64,76 @@ def format_dates(df, date_columns):
             df[col] = df[col].fillna('')
     return df
 
+def athlete_selectbox(key_suffix):
+    """Список спортсменок для формы. Возвращает словарь {label: id}."""
+    df_a = load_athletes()
+    options = {}
+    if not df_a.empty:
+        for _, row in df_a.iterrows():
+            if pd.notna(row['jersey_number']):
+                label = f"№{int(row['jersey_number'])} — {row['full_name']}"
+            else:
+                label = f"(без номера) {row['full_name']}"
+            options[label] = row['id']
+    return options
 
-# ============ ФУНКЦИИ ЗАГРУЗКИ ДАННЫХ ============
+# ============ ЗАГРУЗКА СПРАВОЧНИКОВ ============
+@st.cache_data(ttl=300)
+def load_athletes():
+    r = supabase.table("athletes").select("id, full_name, jersey_number").eq("is_active", True).order("jersey_number").execute()
+    return pd.DataFrame(r.data)
+
+@st.cache_data(ttl=300)
+def load_body_parts():
+    r = supabase.table("dict_body_parts").select("id, name").order("name").execute()
+    return pd.DataFrame(r.data)
+
+@st.cache_data(ttl=300)
+def load_diagnoses():
+    r = supabase.table("dict_diagnoses").select("id, mkb_code, name").order("name").execute()
+    return pd.DataFrame(r.data)
+
+@st.cache_data(ttl=300)
+def load_medicines():
+    r = supabase.table("dict_medicines").select("id, name, wada_status, tue_required").order("name").execute()
+    return pd.DataFrame(r.data)
+
+@st.cache_data(ttl=300)
+def load_exam_templates():
+    r = supabase.table("dict_exam_templates").select("id, name, specialist_type, validity_days, is_mandatory").order("name").execute()
+    return pd.DataFrame(r.data)
+
+@st.cache_data(ttl=300)
+def load_test_types():
+    r = supabase.table("dict_test_types").select("id, name, unit").order("name").execute()
+    return pd.DataFrame(r.data)
+
+@st.cache_data(ttl=300)
+def load_biomarkers():
+    r = supabase.table("dict_biomarkers").select("id, name, unit, reference_min, reference_max").order("name").execute()
+    return pd.DataFrame(r.data)
+
+# ============ ЗАГРУЗКА ДАННЫХ ============
 @st.cache_data(ttl=60)
 def load_today_dashboard():
-    response = supabase.table("v_today_dashboard").select("*").execute()
-    return pd.DataFrame(response.data)
+    r = supabase.table("v_today_dashboard").select("*").execute()
+    return pd.DataFrame(r.data)
 
 @st.cache_data(ttl=60)
 def load_missing_reports():
-    response = supabase.table("v_missing_reports").select("*").execute()
-    return pd.DataFrame(response.data)
+    r = supabase.table("v_missing_reports").select("*").execute()
+    return pd.DataFrame(r.data)
 
 @st.cache_data(ttl=60)
 def load_overdue_exams():
-    response = supabase.table("v_overdue_exams").select("*").execute()
-    return pd.DataFrame(response.data)
-
-@st.cache_data(ttl=60)
-def load_athletes():
-    response = (
-        supabase.table("athletes")
-        .select("id, full_name, jersey_number")
-        .eq("is_active", True)
-        .order("jersey_number")
-        .execute()
-    )
-    return pd.DataFrame(response.data)
+    r = supabase.table("v_overdue_exams").select("*").execute()
+    return pd.DataFrame(r.data)
 
 @st.cache_data(ttl=60)
 def load_health_logs(days=30):
-    since_date = (date.today() - timedelta(days=days)).isoformat()
-    response = (
-        supabase.table("daily_health_logs")
-        .select("*, athletes(full_name, jersey_number)")
-        .gte("log_date", since_date)
-        .order("log_date", desc=False)
-        .execute()
-    )
-    df = pd.DataFrame(response.data)
+    since = (date.today() - timedelta(days=days)).isoformat()
+    r = supabase.table("daily_health_logs").select("*, athletes(full_name, jersey_number)").gte("log_date", since).order("log_date").execute()
+    df = pd.DataFrame(r.data)
     if not df.empty:
         df["full_name"] = df["athletes"].apply(lambda x: x["full_name"] if x else None)
         df["jersey_number"] = df["athletes"].apply(lambda x: x["jersey_number"] if x else None)
@@ -128,62 +141,35 @@ def load_health_logs(days=30):
     return df
 
 @st.cache_data(ttl=60)
-def load_injuries(days=90):
-    since_date = (date.today() - timedelta(days=days)).isoformat()
-    response = (
-        supabase.table("injuries_and_illnesses")
-        .select("*, athletes(full_name, jersey_number), dict_body_parts(name)")
-        .gte("incident_date", since_date)
-        .order("incident_date", desc=True)
-        .execute()
-    )
-    df = pd.DataFrame(response.data)
+def load_injuries(days=365):
+    since = (date.today() - timedelta(days=days)).isoformat()
+    r = supabase.table("injuries_and_illnesses").select("*, athletes(full_name, jersey_number), dict_body_parts(name), dict_diagnoses(name)").gte("incident_date", since).order("incident_date", desc=True).execute()
+    df = pd.DataFrame(r.data)
     if not df.empty:
         df["full_name"] = df["athletes"].apply(lambda x: x["full_name"] if x else None)
         df["jersey_number"] = df["athletes"].apply(lambda x: x["jersey_number"] if x else None)
         df["body_part"] = df["dict_body_parts"].apply(lambda x: x["name"] if x else None)
-        df = df.drop(columns=["athletes", "dict_body_parts"])
+        df["diagnosis"] = df["dict_diagnoses"].apply(lambda x: x["name"] if x else None)
+        df = df.drop(columns=["athletes", "dict_body_parts", "dict_diagnoses"])
     return df
 
 @st.cache_data(ttl=60)
 def load_medications():
     today = date.today().isoformat()
-    response = (
-        supabase.table("medication_intake")
-        .select("*, athletes(full_name, jersey_number), dict_medicines(name, wada_status, tue_required)")
-        .lte("course_start", today)
-        .gte("course_end", today)
-        .execute()
-    )
-    df = pd.DataFrame(response.data)
+    r = supabase.table("medication_intake").select("*, athletes(full_name, jersey_number), dict_medicines(name, wada_status)").lte("course_start", today).gte("course_end", today).execute()
+    df = pd.DataFrame(r.data)
     if not df.empty:
         df["full_name"] = df["athletes"].apply(lambda x: x["full_name"] if x else None)
         df["jersey_number"] = df["athletes"].apply(lambda x: x["jersey_number"] if x else None)
         df["medicine_name"] = df["dict_medicines"].apply(lambda x: x["name"] if x else None)
         df["wada_status"] = df["dict_medicines"].apply(lambda x: x["wada_status"] if x else None)
-        df["tue_required"] = df["dict_medicines"].apply(lambda x: x["tue_required"] if x else None)
         df = df.drop(columns=["athletes", "dict_medicines"])
     return df
 
-@st.cache_data(ttl=300)
-def load_exam_templates():
-    response = (
-        supabase.table("dict_exam_templates")
-        .select("id, name, specialist_type, validity_days, is_mandatory")
-        .order("name")
-        .execute()
-    )
-    return pd.DataFrame(response.data)
-
 @st.cache_data(ttl=60)
 def load_all_examinations():
-    response = (
-        supabase.table("examinations")
-        .select("*, athletes(full_name, jersey_number), dict_exam_templates(name, specialist_type)")
-        .order("examination_date", desc=True)
-        .execute()
-    )
-    df = pd.DataFrame(response.data)
+    r = supabase.table("examinations").select("*, athletes(full_name, jersey_number), dict_exam_templates(name)").order("examination_date", desc=True).execute()
+    df = pd.DataFrame(r.data)
     if not df.empty:
         df["full_name"] = df["athletes"].apply(lambda x: x["full_name"] if x else None)
         df["jersey_number"] = df["athletes"].apply(lambda x: x["jersey_number"] if x else None)
@@ -191,443 +177,368 @@ def load_all_examinations():
         df = df.drop(columns=["athletes", "dict_exam_templates"])
     return df
 
-# ============ ЗАГРУЗКА ДАННЫХ ============
+@st.cache_data(ttl=60)
+def load_vaccinations():
+    r = supabase.table("vaccinations").select("*, athletes(full_name, jersey_number)").order("vaccination_date", desc=True).execute()
+    df = pd.DataFrame(r.data)
+    if not df.empty:
+        df["full_name"] = df["athletes"].apply(lambda x: x["full_name"] if x else None)
+        df["jersey_number"] = df["athletes"].apply(lambda x: x["jersey_number"] if x else None)
+        df = df.drop(columns=["athletes"])
+    return df
+
+@st.cache_data(ttl=60)
+def load_anthropometry():
+    r = supabase.table("anthropometry").select("*, athletes(full_name, jersey_number)").order("measurement_date", desc=True).execute()
+    df = pd.DataFrame(r.data)
+    if not df.empty:
+        df["full_name"] = df["athletes"].apply(lambda x: x["full_name"] if x else None)
+        df["jersey_number"] = df["athletes"].apply(lambda x: x["jersey_number"] if x else None)
+        df = df.drop(columns=["athletes"])
+    return df
+
+@st.cache_data(ttl=60)
+def load_functional_tests():
+    r = supabase.table("functional_tests").select("*, athletes(full_name, jersey_number), dict_test_types(name, unit)").order("test_date", desc=True).execute()
+    df = pd.DataFrame(r.data)
+    if not df.empty:
+        df["full_name"] = df["athletes"].apply(lambda x: x["full_name"] if x else None)
+        df["jersey_number"] = df["athletes"].apply(lambda x: x["jersey_number"] if x else None)
+        df["test_name"] = df["dict_test_types"].apply(lambda x: x["name"] if x else None)
+        df = df.drop(columns=["athletes", "dict_test_types"])
+    return df
+
+@st.cache_data(ttl=60)
+def load_chronic_diseases():
+    r = supabase.table("chronic_diseases").select("*, athletes(full_name, jersey_number)").order("diagnosis_date", desc=True).execute()
+    df = pd.DataFrame(r.data)
+    if not df.empty:
+        df["full_name"] = df["athletes"].apply(lambda x: x["full_name"] if x else None)
+        df["jersey_number"] = df["athletes"].apply(lambda x: x["jersey_number"] if x else None)
+        df = df.drop(columns=["athletes"])
+    return df
+
+@st.cache_data(ttl=60)
+def load_lab_results():
+    r = supabase.table("lab_results").select("*, athletes(full_name, jersey_number), dict_biomarkers(name, unit)").order("measurement_date", desc=True).execute()
+    df = pd.DataFrame(r.data)
+    if not df.empty:
+        df["full_name"] = df["athletes"].apply(lambda x: x["full_name"] if x else None)
+        df["jersey_number"] = df["athletes"].apply(lambda x: x["jersey_number"] if x else None)
+        df["biomarker_name"] = df["dict_biomarkers"].apply(lambda x: x["name"] if x else None)
+        df["unit"] = df["dict_biomarkers"].apply(lambda x: x["unit"] if x else None)
+        df = df.drop(columns=["athletes", "dict_biomarkers"])
+    return df
+
+# ============ ЗАГРУЗКА ============
 df_dashboard = load_today_dashboard()
 df_missing = load_missing_reports()
 df_overdue = load_overdue_exams()
 df_athletes = load_athletes()
 df_logs = load_health_logs(30)
-df_exam_templates = load_exam_templates()
 df_all_exams = load_all_examinations()
+df_injuries = load_injuries(365)
+df_meds_current = load_medications()
+df_vaccinations = load_vaccinations()
+df_anthro = load_anthropometry()
+df_tests = load_functional_tests()
+df_chronic = load_chronic_diseases()
+df_lab = load_lab_results()
+
+df_body_parts = load_body_parts()
+df_diagnoses = load_diagnoses()
+df_medicines = load_medicines()
+df_exam_templates = load_exam_templates()
+df_test_types = load_test_types()
+df_biomarkers = load_biomarkers()
 
 # ============ ЗАГОЛОВОК ============
 st.title("🏐 Медицинский дашборд команды")
 if user_role == "athlete":
     st.caption(f"Личный кабинет спортсменки · {user.get('full_name', '')}")
 else:
-    st.caption(
-        f"Мониторинг состояния спортсменок в реальном времени · "
-        f"Пользователь: {user.get('full_name', 'Гость')} "
-        f"({user_role})"
-    )
+    st.caption(f"Пользователь: {user.get('full_name', 'Гость')} ({user_role})")
 
 # ============ ЛИЧНЫЙ КАБИНЕТ СПОРТСМЕНКИ ============
 if user_role == "athlete" and user_athlete_id:
-    tab_status, tab_dynamics, tab_exams_self = st.tabs([
-        "📊 Мой статус",
-        "📈 Моя динамика",
-        "🏥 Мои осмотры"
-    ])
-    
-    # --- Личные данные спортсменки ---
-    df_my_dashboard = df_dashboard[df_dashboard["№"] == int(df_athletes[df_athletes["id"] == user_athlete_id]["jersey_number"].iloc[0])] if not df_athletes[df_athletes["id"] == user_athlete_id].empty else pd.DataFrame()
-    df_my_logs = df_logs[df_logs["athlete_id"] == user_athlete_id]
-    df_my_exams = df_all_exams[df_all_exams["athlete_id"] == user_athlete_id]
-    
+    tab_status, tab_dynamics, tab_exams_self = st.tabs(["📊 Мой статус", "📈 Моя динамика", "🏥 Мои осмотры"])
+
     with tab_status:
         st.header("📊 Мой статус на сегодня")
-        
-        # Находим свою строку в дашборде
-        my_jersey = None
-        my_athlete_row = df_athletes[df_athletes["id"] == user_athlete_id]
-        if not my_athlete_row.empty:
-            my_jersey = my_athlete_row["jersey_number"].iloc[0]
-        
-        if my_jersey is not None:
-            my_row = df_dashboard[df_dashboard["№"] == int(my_jersey)]
-        else:
-            my_row = pd.DataFrame()
-        
-        if not my_row.empty:
-            status = my_row["status"].iloc[0] if "status" in my_row.columns else "grey"
-            icon = my_row["icon"].iloc[0] if "icon" in my_row.columns else "⚪"
-            
+        my_row = df_athletes[df_athletes["id"] == user_athlete_id]
+        my_jersey = int(my_row["jersey_number"].iloc[0]) if not my_row.empty and pd.notna(my_row["jersey_number"].iloc[0]) else None
+        my_dashboard = df_dashboard[df_dashboard["№"] == my_jersey] if my_jersey else pd.DataFrame()
+
+        if not my_dashboard.empty:
+            r = my_dashboard.iloc[0]
             col1, col2, col3, col4 = st.columns(4)
-            col1.metric("Статус", f"{icon} {status}")
-            col2.metric("Пульс", my_row["Пульс"].iloc[0] if pd.notna(my_row["Пульс"].iloc[0]) else "—")
-            col3.metric("Разница", my_row["Разница"].iloc[0] if pd.notna(my_row["Разница"].iloc[0]) else "—")
-            col4.metric("Сон", my_row["Сон"].iloc[0] if pd.notna(my_row["Сон"].iloc[0]) else "—")
-            
-            st.divider()
-            if "Причина" in my_row.columns:
-                st.info(f"**Причина:** {my_row['Причина'].iloc[0]}")
+            col1.metric("Статус", f"{r.get('icon', '⚪')} {r.get('status', 'grey')}")
+            col2.metric("Пульс", r.get("Пульс", "—"))
+            col3.metric("Разница", r.get("Разница", "—"))
+            col4.metric("Сон", r.get("Сон", "—"))
+            if "Причина" in r:
+                st.info(f"**Причина:** {r['Причина']}")
         else:
-            st.info("📭 Сегодня вы ещё не отправляли утренний отчёт. Напишите боту в Telegram!")
-    
+            st.info("📭 Сегодня вы ещё не отправляли утренний отчёт.")
+
     with tab_dynamics:
-        st.header("📈 Моя динамика за 30 дней")
-        
-        if df_my_logs.empty:
-            st.info("📭 Нет данных за последние 30 дней. Отправляйте отчёты боту каждое утро!")
+        st.header("📈 Моя динамика")
+        my_logs = df_logs[df_logs["athlete_id"] == user_athlete_id]
+        if my_logs.empty:
+            st.info("Нет данных за 30 дней.")
         else:
-            df_chart = df_my_logs[["log_date", "morning_hr", "ortho_hr_after", "sleep_hours", "borg_rating"]].copy()
-            df_chart = df_chart.sort_values("log_date").set_index("log_date")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.subheader("❤️ Мой пульс")
+            df_chart = my_logs[["log_date", "morning_hr", "ortho_hr_after", "sleep_hours", "borg_rating"]].sort_values("log_date").set_index("log_date")
+            c1, c2 = st.columns(2)
+            with c1:
+                st.subheader("❤️ Пульс")
                 if df_chart["morning_hr"].notna().any():
-                    pulse_data = df_chart[["morning_hr"]].dropna()
-                    pulse_data.columns = ["Пульс утром"]
-                    st.line_chart(pulse_data, use_container_width=True)
-                else:
-                    st.info("Нет данных")
-            
-            with col2:
-                st.subheader("😴 Мой сон")
+                    d = df_chart[["morning_hr"]].dropna(); d.columns = ["Пульс"]
+                    st.line_chart(d, use_container_width=True)
+            with c2:
+                st.subheader("😴 Сон")
                 if df_chart["sleep_hours"].notna().any():
-                    sleep_data = df_chart[["sleep_hours"]].dropna()
-                    sleep_data.columns = ["Часы сна"]
-                    st.line_chart(sleep_data, use_container_width=True)
-                else:
-                    st.info("Нет данных")
-            
-            st.subheader("📊 Моя ортостатическая разница")
-            ortho_df = df_chart[["morning_hr", "ortho_hr_after"]].dropna()
-            if not ortho_df.empty:
-                ortho_df["Разница"] = ortho_df["ortho_hr_after"] - ortho_df["morning_hr"]
-                ortho_df = ortho_df[["Разница"]]
-                st.line_chart(ortho_df, use_container_width=True)
-                st.caption("🔴 > 25 — критическая зона. 🟡 15-25 — внимание.")
-            
-            col3, col4 = st.columns(2)
-            
-            with col3:
-                st.subheader("💪 Моя шкала Борга")
-                if df_chart["borg_rating"].notna().any():
-                    borg_data = df_chart[["borg_rating"]].dropna()
-                    borg_data.columns = ["Борг"]
-                    st.line_chart(borg_data, use_container_width=True)
-            
-            with col4:
-                st.subheader("📉 Мои средние значения")
-                avg_data = pd.DataFrame({
-                    "Показатель": ["Средний пульс", "Средний сон", "Средний Борг"],
-                    "Значение": [
-                        round(df_chart["morning_hr"].mean(), 1) if df_chart["morning_hr"].notna().any() else "—",
-                        round(df_chart["sleep_hours"].mean(), 1) if df_chart["sleep_hours"].notna().any() else "—",
-                        round(df_chart["borg_rating"].mean(), 1) if df_chart["borg_rating"].notna().any() else "—"
-                    ]
-                })
-                st.dataframe(avg_data, use_container_width=True, hide_index=True)
-    
+                    d = df_chart[["sleep_hours"]].dropna(); d.columns = ["Сон"]
+                    st.line_chart(d, use_container_width=True)
+
     with tab_exams_self:
-        st.header("🏥 Мои медицинские осмотры")
-        
-        if df_my_exams.empty:
+        st.header("🏥 Мои осмотры")
+        my_exams = df_all_exams[df_all_exams["athlete_id"] == user_athlete_id]
+        if my_exams.empty:
             st.info("Осмотры пока не внесены.")
         else:
-            display_cols = ["examination_date", "exam_name", "is_approved", "next_exam_date", "restrictions"]
-            available_cols = [c for c in display_cols if c in df_my_exams.columns]
-            
-            df_show = df_my_exams[available_cols].copy()
-            df_show = format_dates(df_show, ["examination_date", "next_exam_date"])
-            df_show = df_show.rename(columns={
-                "examination_date": "Дата",
-                "exam_name": "Осмотр",
-                "is_approved": "Допуск",
-                "next_exam_date": "Следующий",
-                "restrictions": "Ограничения"
-            })
+            cols = ["examination_date", "exam_name", "is_approved", "next_exam_date", "restrictions"]
+            av = [c for c in cols if c in my_exams.columns]
+            df_show = format_dates(my_exams[av], ["examination_date", "next_exam_date"])
+            df_show = df_show.rename(columns={"examination_date": "Дата", "exam_name": "Осмотр", "is_approved": "Допуск", "next_exam_date": "Следующий", "restrictions": "Ограничения"})
             st.dataframe(df_show, use_container_width=True, hide_index=True)
 
-# ============ ДАШБОРД ДЛЯ ВРАЧА/ТРЕНЕРА/АДМИНА ============
+# ============ ДАШБОРД ВРАЧА / ТРЕНЕРА / АДМИНА ============
 else:
-    # ============ ВКЛАДКИ С УЧЁТОМ РОЛИ ============
+    # Вкладки по ролям
     if user_role == "coach":
-        tab_today, tab_dynamics = st.tabs(["📊 Сегодня", "📈 Динамика"])
-        tab_exams = None
-        tab_injuries = None
-        tab_meds = None
+        tabs = st.tabs(["📊 Сегодня", "📈 Динамика"])
+        tab_today, tab_dynamics = tabs
+        tab_exams = tab_injuries = tab_meds = tab_vaccines = tab_anthro = tab_tests = tab_chronic = tab_lab = None
     elif user_role == "masseur":
-        tab_today, tab_dynamics, tab_exams, tab_injuries = st.tabs([
-            "📊 Сегодня", "📈 Динамика", "🏥 Осмотры", "🩹 Травмы"
+        tabs = st.tabs(["📊 Сегодня", "📈 Динамика", "🏥 Осмотры", "🩹 Травмы", "📏 Антропометрия"])
+        tab_today, tab_dynamics, tab_exams, tab_injuries, tab_anthro = tabs
+        tab_meds = tab_vaccines = tab_tests = tab_chronic = tab_lab = None
+    elif user_role == "athlete":
+        tabs = st.tabs(["📊 Сегодня", "📈 Динамика"])
+        tab_today, tab_dynamics = tabs
+        tab_exams = tab_injuries = tab_meds = tab_vaccines = tab_anthro = tab_tests = tab_chronic = tab_lab = None
+    else:  # admin, doctor
+        tabs = st.tabs([
+            "📊 Сегодня", "📈 Динамика", "🏥 Осмотры", "🩹 Травмы",
+            "💊 Лекарства", "💉 Прививки", "📏 Антропометрия",
+            "🏃 Тесты", "🩺 Хроники", "🧪 Анализы"
         ])
-        tab_meds = None
-    else:
-        tab_today, tab_dynamics, tab_exams, tab_injuries, tab_meds = st.tabs([
-            "📊 Сегодня", "📈 Динамика", "🏥 Осмотры", "🩹 Травмы", "💊 Лекарства"
-        ])
-    
-    # ============ ВКЛАДКА 1: СЕГОДНЯ ============
+        (tab_today, tab_dynamics, tab_exams, tab_injuries,
+         tab_meds, tab_vaccines, tab_anthro, tab_tests, tab_chronic, tab_lab) = tabs
+
+    # --- Сегодня ---
     with tab_today:
         st.header("📊 Сводка за сегодня")
-        
-        red_count = len(df_dashboard[df_dashboard["status"] == "red"]) if not df_dashboard.empty else 0
-        yellow_count = len(df_dashboard[df_dashboard["status"] == "yellow"]) if not df_dashboard.empty else 0
-        green_count = len(df_dashboard[df_dashboard["status"] == "green"]) if not df_dashboard.empty else 0
-        grey_count = len(df_dashboard[df_dashboard["status"] == "grey"]) if not df_dashboard.empty else 0
-        
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("🔴 Проблемы", red_count)
-        col2.metric("🟡 Внимание", yellow_count)
-        col3.metric("🟢 Норма", green_count)
-        col4.metric("⚪ Нет данных", grey_count)
-        
+        rc = len(df_dashboard[df_dashboard["status"] == "red"]) if not df_dashboard.empty else 0
+        yc = len(df_dashboard[df_dashboard["status"] == "yellow"]) if not df_dashboard.empty else 0
+        gc = len(df_dashboard[df_dashboard["status"] == "green"]) if not df_dashboard.empty else 0
+        grc = len(df_dashboard[df_dashboard["status"] == "grey"]) if not df_dashboard.empty else 0
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("🔴 Проблемы", rc); c2.metric("🟡 Внимание", yc)
+        c3.metric("🟢 Норма", gc); c4.metric("⚪ Нет данных", grc)
+
         st.divider()
         st.subheader("🚦 Статус спортсменок")
-        
         if not df_dashboard.empty:
-            status_filter = st.selectbox(
-                "Фильтр по статусу",
-                ["Все", "🔴 Только красные", "🟡 Только жёлтые", "🟢 Только зелёные", "⚪ Только без данных"]
-            )
-            
-            if status_filter == "🔴 Только красные":
-                df_filtered = df_dashboard[df_dashboard["status"] == "red"]
-            elif status_filter == "🟡 Только жёлтые":
-                df_filtered = df_dashboard[df_dashboard["status"] == "yellow"]
-            elif status_filter == "🟢 Только зелёные":
-                df_filtered = df_dashboard[df_dashboard["status"] == "green"]
-            elif status_filter == "⚪ Только без данных":
-                df_filtered = df_dashboard[df_dashboard["status"] == "grey"]
-            else:
-                df_filtered = df_dashboard
-            
-            display_cols = ["icon", "№", "ФИО", "Пульс", "Разница", "Борг", "Сон", "Причина"]
-            available_cols = [c for c in display_cols if c in df_filtered.columns]
-            st.dataframe(df_filtered[available_cols], use_container_width=True, hide_index=True)
+            filt = st.selectbox("Фильтр", ["Все", "🔴 Только красные", "🟡 Только жёлтые", "🟢 Только зелёные", "⚪ Только без данных"])
+            if filt == "🔴 Только красные": df_d = df_dashboard[df_dashboard["status"] == "red"]
+            elif filt == "🟡 Только жёлтые": df_d = df_dashboard[df_dashboard["status"] == "yellow"]
+            elif filt == "🟢 Только зелёные": df_d = df_dashboard[df_dashboard["status"] == "green"]
+            elif filt == "⚪ Только без данных": df_d = df_dashboard[df_dashboard["status"] == "grey"]
+            else: df_d = df_dashboard
+            cols = ["icon", "№", "ФИО", "Пульс", "Разница", "Борг", "Сон", "Причина"]
+            av = [c for c in cols if c in df_d.columns]
+            st.dataframe(df_d[av], use_container_width=True, hide_index=True)
         else:
-            st.info("Пока нет данных за сегодня. Спортсменки ещё не отправили отчёты.")
-        
+            st.info("Нет данных за сегодня.")
+
         st.divider()
         st.subheader("📵 Не сдали утренний отчёт")
         if not df_missing.empty:
-            st.warning(f"Не сдали: {len(df_missing)} спортсменок")
+            st.warning(f"Не сдали: {len(df_missing)}")
             st.dataframe(df_missing, use_container_width=True, hide_index=True)
         else:
-            st.success("✅ Все спортсменки сдали отчёт!")
-    
-    # ============ ВКЛАДКА 2: ДИНАМИКА ============
+            st.success("✅ Все сдали!")
+
+    # --- Динамика ---
     with tab_dynamics:
-        st.header("📈 Динамика за последние 30 дней")
-        
-        athlete_options = ["👥 Вся команда"]
-        athlete_map = {}
-        
+        st.header("📈 Динамика за 30 дней")
+        opts = ["👥 Вся команда"]; amap = {}
         if not df_athletes.empty:
             for _, row in df_athletes.iterrows():
-                if pd.notna(row['jersey_number']):
-                    jersey = int(row['jersey_number'])
-                    label = f"№{jersey} — {row['full_name']}"
-                else:
-                    label = f"(без номера) {row['full_name']}"
-                athlete_options.append(label)
-                athlete_map[label] = row['id']
-        
-        st.caption(f"👥 Всего спортсменок в списке: {len(athlete_options) - 1}")
-        selected_athlete = st.selectbox("Выберите спортсменку или всю команду", athlete_options)
-        
-        if selected_athlete == "👥 Вся команда":
-            df_filtered_logs = df_logs
-            chart_title_suffix = "всей команды"
+                j = int(row['jersey_number']) if pd.notna(row['jersey_number']) else None
+                label = f"№{j} — {row['full_name']}" if j else f"(без номера) {row['full_name']}"
+                opts.append(label); amap[label] = row['id']
+        sel = st.selectbox("Спортсменка", opts)
+        if sel == "👥 Вся команда":
+            df_f = df_logs; suf = "команды"
         else:
-            athlete_id = athlete_map[selected_athlete]
-            df_filtered_logs = df_logs[df_logs["athlete_id"] == athlete_id]
-            chart_title_suffix = f"спортсменки {selected_athlete}"
-        
-        if df_filtered_logs.empty:
-            st.info(f"📭 Пока нет данных для {chart_title_suffix}.")
+            df_f = df_logs[df_logs["athlete_id"] == amap[sel]]; suf = f"— {sel}"
+        if df_f.empty:
+            st.info(f"Нет данных для {suf}.")
         else:
-            if selected_athlete == "👥 Вся команда":
-                df_chart = df_filtered_logs.groupby("log_date").agg({
-                    "morning_hr": "mean", "ortho_hr_after": "mean",
-                    "sleep_hours": "mean", "borg_rating": "mean"
-                }).reset_index()
+            if sel == "👥 Вся команда":
+                dfc = df_f.groupby("log_date").agg({"morning_hr":"mean","ortho_hr_after":"mean","sleep_hours":"mean","borg_rating":"mean"}).reset_index()
             else:
-                df_chart = df_filtered_logs[["log_date", "morning_hr", "ortho_hr_after", "sleep_hours", "borg_rating"]].copy()
-            
-            df_chart = df_chart.sort_values("log_date").set_index("log_date")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.subheader(f"❤️ Пульс — {chart_title_suffix}")
-                if "morning_hr" in df_chart.columns and df_chart["morning_hr"].notna().any():
-                    pulse_data = df_chart[["morning_hr"]].dropna()
-                    pulse_data.columns = ["Пульс утром"]
-                    st.line_chart(pulse_data, use_container_width=True)
-            with col2:
-                st.subheader(f"😴 Сон — {chart_title_suffix}")
-                if "sleep_hours" in df_chart.columns and df_chart["sleep_hours"].notna().any():
-                    sleep_data = df_chart[["sleep_hours"]].dropna()
-                    sleep_data.columns = ["Часы сна"]
-                    st.line_chart(sleep_data, use_container_width=True)
-            
-            st.subheader(f"📊 Ортостатическая разница — {chart_title_suffix}")
-            if "morning_hr" in df_chart.columns and "ortho_hr_after" in df_chart.columns:
-                ortho_df = df_chart[["morning_hr", "ortho_hr_after"]].dropna()
-                if not ortho_df.empty:
-                    ortho_df["Разница"] = ortho_df["ortho_hr_after"] - ortho_df["morning_hr"]
-                    ortho_df = ortho_df[["Разница"]]
-                    st.line_chart(ortho_df, use_container_width=True)
-                    st.caption("🔴 > 25 — критическая зона. 🟡 15-25 — внимание.")
-            
-            col3, col4 = st.columns(2)
-            with col3:
-                st.subheader(f"💪 Шкала Борга — {chart_title_suffix}")
-                if "borg_rating" in df_chart.columns and df_chart["borg_rating"].notna().any():
-                    borg_data = df_chart[["borg_rating"]].dropna()
-                    borg_data.columns = ["Борг"]
-                    st.line_chart(borg_data, use_container_width=True)
-            with col4:
-                st.subheader("📉 Средние значения за период")
-                avg_data = pd.DataFrame({
-                    "Показатель": ["Средний пульс", "Средний сон", "Средний Борг"],
-                    "Значение": [
-                        round(df_chart["morning_hr"].mean(), 1) if "morning_hr" in df_chart and df_chart["morning_hr"].notna().any() else "—",
-                        round(df_chart["sleep_hours"].mean(), 1) if "sleep_hours" in df_chart and df_chart["sleep_hours"].notna().any() else "—",
-                        round(df_chart["borg_rating"].mean(), 1) if "borg_rating" in df_chart and df_chart["borg_rating"].notna().any() else "—"
-                    ]
-                })
-                st.dataframe(avg_data, use_container_width=True, hide_index=True)
-    
-    # ============ ВКЛАДКА 3: ОСМОТРЫ ============
+                dfc = df_f[["log_date","morning_hr","ortho_hr_after","sleep_hours","borg_rating"]].copy()
+            dfc = dfc.sort_values("log_date").set_index("log_date")
+            c1, c2 = st.columns(2)
+            with c1:
+                st.subheader(f"❤️ Пульс")
+                if dfc["morning_hr"].notna().any():
+                    d = dfc[["morning_hr"]].dropna(); d.columns = ["Пульс"]; st.line_chart(d, use_container_width=True)
+            with c2:
+                st.subheader(f"😴 Сон")
+                if dfc["sleep_hours"].notna().any():
+                    d = dfc[["sleep_hours"]].dropna(); d.columns = ["Сон"]; st.line_chart(d, use_container_width=True)
+            st.subheader(f"📊 Ортостатическая разница")
+            o = dfc[["morning_hr","ortho_hr_after"]].dropna()
+            if not o.empty:
+                o["Разница"] = o["ortho_hr_after"] - o["morning_hr"]
+                st.line_chart(o[["Разница"]], use_container_width=True)
+            c3, c4 = st.columns(2)
+            with c3:
+                st.subheader(f"💪 Шкала Борга")
+                if dfc["borg_rating"].notna().any():
+                    d = dfc[["borg_rating"]].dropna(); d.columns = ["Борг"]; st.line_chart(d, use_container_width=True)
+
+    # --- ОСМОТРЫ ---
     if tab_exams is not None:
         with tab_exams:
-            st.header("🏥 Медицинские осмотры")
-            
-            sub_view, sub_add = st.tabs(["📋 Просмотр осмотров", "✍️ Внести новый осмотр"])
-            
-            with sub_view:
-                st.subheader("⚠️ Просроченные осмотры")
+            st.header("🏥 Осмотры")
+            sv, sa = st.tabs(["📋 Просмотр", "✍️ Внести осмотр"])
+
+            with sv:
+                st.subheader("⚠️ Просроченные")
                 if not df_overdue.empty:
-                    st.error(f"Просрочено: {len(df_overdue)} осмотров")
-                    df_overdue_formatted = format_dates(df_overdue, ["Был должен"])
-                    st.dataframe(df_overdue_formatted, use_container_width=True, hide_index=True)
+                    st.error(f"Просрочено: {len(df_overdue)}")
+                    d = format_dates(df_overdue, ["Был должен"])
+                    st.dataframe(d, use_container_width=True, hide_index=True)
                 else:
-                    st.success("✅ Все медосмотры в порядке!")
-                
-                st.divider()
+                    st.success("✅ Всё в порядке")
+
                 st.subheader("📋 Все осмотры (последние 50)")
                 if not df_all_exams.empty:
-                    display_cols = ["examination_date", "jersey_number", "full_name", "exam_name", "is_approved", "next_exam_date", "restrictions"]
-                    available_cols = [c for c in display_cols if c in df_all_exams.columns]
-                    df_exams_to_show = df_all_exams[available_cols].head(50).copy()
-                    df_exams_to_show = format_dates(df_exams_to_show, ["examination_date", "next_exam_date"])
-                    df_exams_to_show = df_exams_to_show.rename(columns={
-                        "examination_date": "Дата осмотра", "jersey_number": "№",
-                        "full_name": "ФИО", "exam_name": "Осмотр", "is_approved": "Допуск",
-                        "next_exam_date": "Следующий", "restrictions": "Ограничения"
-                    })
-                    st.dataframe(df_exams_to_show, use_container_width=True, hide_index=True)
+                    cols = ["examination_date","jersey_number","full_name","exam_name","is_approved","next_exam_date","restrictions"]
+                    av = [c for c in cols if c in df_all_exams.columns]
+                    d = format_dates(df_all_exams[av].head(50).copy(), ["examination_date","next_exam_date"])
+                    d = d.rename(columns={"examination_date":"Дата","jersey_number":"№","full_name":"ФИО","exam_name":"Осмотр","is_approved":"Допуск","next_exam_date":"Следующий","restrictions":"Ограничения"})
+                    st.dataframe(d, use_container_width=True, hide_index=True)
                 else:
-                    st.info("Пока нет ни одного осмотра.")
-            
-            with sub_add:
+                    st.info("Осмотров пока нет.")
+
+            with sa:
                 st.subheader("✍️ Внести новый осмотр")
-                st.caption("Поля со звёздочкой (*) обязательны.")
-                
-                with st.form("form_add_examination", clear_on_submit=True):
-                    athlete_options_form = {}
-                    if not df_athletes.empty:
-                        for _, row in df_athletes.iterrows():
-                            if pd.notna(row['jersey_number']):
-                                jersey = int(row['jersey_number'])
-                                label = f"№{jersey} — {row['full_name']}"
-                            else:
-                                label = f"(без номера) {row['full_name']}"
-                            athlete_options_form[label] = row['id']
-                    
-                    selected_athlete_form = st.selectbox("Спортсменка *", options=list(athlete_options_form.keys()))
-                    
-                    template_options_form = {}
+                with st.form("f_exam", clear_on_submit=True):
+                    aopts = athlete_selectbox("exam")
+                    sel_a = st.selectbox("Спортсменка *", list(aopts.keys()))
+                    topts = {}
                     if not df_exam_templates.empty:
                         for _, row in df_exam_templates.iterrows():
-                            label = f"{row['name']} ({row['specialist_type']})"
-                            template_options_form[label] = {"id": row['id'], "validity_days": row['validity_days']}
-                    
-                    selected_template_form = st.selectbox("Тип осмотра *", options=list(template_options_form.keys()))
-                    
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        exam_date = st.date_input("Дата осмотра *", value=date.today(), format="DD.MM.YYYY")
-                    with col2:
-                        selected_template_data = template_options_form.get(selected_template_form, {})
-                        validity = selected_template_data.get("validity_days", 365)
-                        next_date_default = exam_date + timedelta(days=validity) if validity else exam_date
-                        next_exam_date = st.date_input("Дата следующего осмотра", value=next_date_default, format="DD.MM.YYYY")
-                    
-                    result_text = st.text_area("Заключение врача *", height=100)
-                    is_approved = st.radio("Допуск получен? *", options=[True, False],
-                                          format_func=lambda x: "✅ Да, допущена" if x else "❌ Нет, не допущена", horizontal=True)
-                    restrictions = st.text_input("Ограничения (если есть)")
-                    
-                    submitted = st.form_submit_button("💾 Сохранить осмотр", type="primary")
-                    
-                    if submitted:
-                        if not result_text or len(result_text.strip()) < 3:
-                            st.error("❌ Заполните заключение врача")
+                            topts[f"{row['name']} ({row['specialist_type']})"] = {"id":row['id'],"validity":row['validity_days']}
+                    sel_t = st.selectbox("Тип осмотра *", list(topts.keys()))
+                    c1, c2 = st.columns(2)
+                    with c1: ed = st.date_input("Дата осмотра *", value=date.today(), format="DD.MM.YYYY")
+                    with c2:
+                        v = topts.get(sel_t, {}).get("validity", 365)
+                        nd = ed + timedelta(days=v) if v else ed
+                        ned = st.date_input("Следующий осмотр", value=nd, format="DD.MM.YYYY")
+                    rt = st.text_area("Заключение *", height=100)
+                    ap = st.radio("Допуск? *", [True, False], format_func=lambda x: "✅ Да" if x else "❌ Нет", horizontal=True)
+                    res = st.text_input("Ограничения")
+                    if st.form_submit_button("💾 Сохранить", type="primary"):
+                        if len(rt.strip()) < 3:
+                            st.error("Заполните заключение")
                         else:
                             try:
-                                new_exam = {
-                                    "athlete_id": athlete_options_form[selected_athlete_form],
-                                    "exam_template_id": template_options_form[selected_template_form]["id"],
-                                    "examination_date": exam_date.isoformat(),
-                                    "result_text": result_text.strip(),
-                                    "is_approved": is_approved,
-                                    "restrictions": restrictions.strip() if restrictions else None,
-                                    "next_exam_date": next_exam_date.isoformat() if next_exam_date else None
-                                }
-                                supabase.table("examinations").insert(new_exam).execute()
-                                st.success(f"✅ Осмотр сохранён: {selected_athlete_form}")
+                                supabase.table("examinations").insert({
+                                    "athlete_id": aopts[sel_a],
+                                    "exam_template_id": topts[sel_t]["id"],
+                                    "examination_date": ed.isoformat(),
+                                    "result_text": rt.strip(),
+                                    "is_approved": ap,
+                                    "restrictions": res.strip() if res else None,
+                                    "next_exam_date": ned.isoformat() if ned else None
+                                }).execute()
+                                st.success(f"✅ Осмотр сохранён: {sel_a}")
                                 st.cache_data.clear()
                             except Exception as e:
-                                st.error(f"❌ Ошибка: {e}")
-    
-    # ============ ВКЛАДКА 4: ТРАВМЫ ============
+                                st.error(f"Ошибка: {e}")
+
+    # --- ТРАВМЫ ---
     if tab_injuries is not None:
         with tab_injuries:
             st.header("🩹 Травмы и заболевания")
-            df_injuries = load_injuries(90)
-            if df_injuries.empty:
-                st.info("За последние 90 дней травм не зарегистрировано.")
-            else:
-                st.warning(f"Травм за 90 дней: {len(df_injuries)}")
-                display_cols = ["incident_date", "jersey_number", "full_name", "body_part", "side", "severity", "days_lost"]
-                available_cols = [c for c in display_cols if c in df_injuries.columns]
-                df_injuries_show = format_dates(df_injuries[available_cols], ["incident_date"])
-                df_injuries_show = df_injuries_show.rename(columns={
-                    "incident_date": "Дата", "jersey_number": "№", "full_name": "ФИО",
-                    "body_part": "Часть тела", "side": "Сторона",
-                    "severity": "Тяжесть", "days_lost": "Пропущено дней"
-                })
-                st.dataframe(df_injuries_show, use_container_width=True, hide_index=True)
-    
-    # ============ ВКЛАДКА 5: ЛЕКАРСТВА ============
-    if tab_meds is not None:
-        with tab_meds:
-            st.header("💊 Лекарственные препараты")
-            df_meds = load_medications()
-            if df_meds.empty:
-                st.info("Сейчас никто не принимает лекарства.")
-            else:
-                st.warning(f"Принимают лекарства: {len(df_meds)} спортсменок")
-                display_cols = ["jersey_number", "full_name", "medicine_name", "dosage", "course_end", "wada_status", "tue_required"]
-                available_cols = [c for c in display_cols if c in df_meds.columns]
-                df_meds_show = format_dates(df_meds[available_cols], ["course_end"])
-                df_meds_show = df_meds_show.rename(columns={
-                    "jersey_number": "№", "full_name": "ФИО", "medicine_name": "Препарат",
-                    "dosage": "Дозировка", "course_end": "До",
-                    "wada_status": "WADA", "tue_required": "TUE"
-                })
-                st.dataframe(df_meds_show, use_container_width=True, hide_index=True)
-                if "wada_status" in df_meds.columns:
-                    risky = df_meds[df_meds["wada_status"] != "Разрешен"]
-                    if not risky.empty:
-                        st.error(f"⚠️ Антидопинговый риск: {len(risky)} случаев")
+            sv, sa = st.tabs(["📋 Просмотр (365 дней)", "✍️ Внести травму"])
 
-# ============ ВЫХОД И ОБНОВЛЕНИЕ ============
-st.divider()
-col1, col2 = st.columns([4, 1])
-with col1:
-    if st.button("🔄 Обновить данные"):
-        st.cache_data.clear()
-        st.rerun()
-with col2:
-    if st.button("🚪 Выйти"):
-        st.session_state["authenticated"] = False
-        st.session_state.pop("user", None)
-        st.rerun()
+            with sv:
+                if df_injuries.empty:
+                    st.info("За 365 дней травм не зарегистрировано.")
+                else:
+                    st.warning(f"Травм: {len(df_injuries)}")
+                    cols = ["incident_date","jersey_number","full_name","diagnosis","body_part","side","severity","days_lost"]
+                    av = [c for c in cols if c in df_injuries.columns]
+                    d = format_dates(df_injuries[av].copy(), ["incident_date"])
+                    d = d.rename(columns={"incident_date":"Дата","jersey_number":"№","full_name":"ФИО","diagnosis":"Диагноз","body_part":"Часть тела","side":"Сторона","severity":"Тяжесть","days_lost":"Пропущено"})
+                    st.dataframe(d, use_container_width=True, hide_index=True)
 
-st.caption(f"Последнее обновление: {pd.Timestamp.now().strftime('%H:%M:%S')}")
+            with sa:
+                st.subheader("✍️ Внести травму или заболевание")
+                with st.form("f_inj", clear_on_submit=True):
+                    aopts = athlete_selectbox("inj")
+                    sel_a = st.selectbox("Спортсменка *", list(aopts.keys()))
+
+                    dopts = {}
+                    if not df_diagnoses.empty:
+                        for _, row in df_diagnoses.iterrows():
+                            lbl = f"{row['mkb_code']} — {row['name']}" if pd.notna(row['mkb_code']) else row['name']
+                            dopts[lbl] = row['id']
+                    if not dopts:
+                        st.warning("Справочник диагнозов пуст. Добавьте диагнозы через Supabase.")
+                    sel_d = st.selectbox("Диагноз (МКБ)", ["— не указан —"] + list(dopts.keys()))
+
+                    bopts = {}
+                    if not df_body_parts.empty:
+                        for _, row in df_body_parts.iterrows():
+                            bopts[row['name']] = row['id']
+                    sel_b = st.selectbox("Часть тела", ["— не указана —"] + list(bopts.keys()))
+
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        idate = st.date_input("Дата травмы *", value=date.today(), format="DD.MM.YYYY")
+                        side = st.selectbox("Сторона", ["Не применимо", "Правая", "Левая"])
+                    with c2:
+                        mech = st.selectbox("Механизм", ["Не уточнено", "Контакт с соперником", "Падение", "Резкое движение без контакта", "Хроническая перегрузка"])
+                        sev = st.selectbox("Тяжесть", ["Легкая", "Средняя", "Тяжелая"])
+
+                    is_rec = st.checkbox("Рецидив (травма повторная)")
+                    treat = st.text_area("Описание лечения", height=80)
+                    d_lost = st.number_input("Пропущено дней", min_value=0, value=0)
+
+                    if st.form_submit_button("💾 Сохранить", type="primary"):
+                        try:
+                            payload = {
+                                "athlete_id": aopts[sel_a],
+                                "incident_date": idate.isoformat(),
+                                "side": side,
+                                "mechanism": mech,
+                                "severity": sev,
+                                "is_recurrent": is_rec,
+                                "treatment_description": treat.strip() if treat else None,
+                                "days_lost": int(d_lost)
+                            }
+                            if sel_d != "— не указан —": payload["diagnosis_id"] = dopts[sel_d]
+                            if sel_b != "— не указана —": payload["body_part_id"] = bopts[sel_b]
+
+                            supabase.table("injuries_and_illnesses").insert(payload).execute()
+                            st.success(f"✅ Травма сохран
