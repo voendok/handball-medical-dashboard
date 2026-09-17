@@ -377,12 +377,13 @@ else:
     else:
         tabs = st.tabs([
             "📊 Сегодня", "📈 Динамика",
-            "👤 Карточки", "🩺 Приёмы", "🏥 Осмотры",
+            "👤 Карточки", "🗂️ Карта спортсменки",
+            "🩺 Приёмы", "🏥 Осмотры",
             "🩹 Травмы", "💊 Лекарства", "💉 Прививки",
             "📏 Антропометрия", "🏃 Тесты",
             "🩺 Хроники", "🧪 Анализы"
         ])
-        (tab_today, tab_dynamics, tab_cards, tab_visits, tab_exams,
+        (tab_today, tab_dynamics, tab_cards, tab_medcard, tab_visits, tab_exams,
          tab_injuries, tab_meds, tab_vaccines, tab_anthro, tab_tests,
          tab_chronic, tab_lab) = tabs
 
@@ -683,7 +684,253 @@ else:
                                     st.cache_data.clear()
                                 except Exception as e:
                                     st.error(f"Ошибка: {e}")
+    # --- КАРТА СПОРТСМЕНКИ ---
+    if tab_medcard is not None:
+        with tab_medcard:
+            st.header("🗂️ Медицинская карта спортсменки")
 
+            opts_mc = athlete_options_dict()
+            if not opts_mc:
+                st.info("Нет активных спортсменок.")
+            else:
+                sel_mc = st.selectbox("Выберите спортсменку", list(opts_mc.keys()), key="medcard_select")
+                mc_aid = opts_mc[sel_mc]
+
+                # Краткая карточка спортсменки
+                row_mc = df_athletes_full[df_athletes_full["id"] == mc_aid]
+                if not row_mc.empty:
+                    r = row_mc.iloc[0]
+                    c1, c2, c3 = st.columns(3)
+                    with c1:
+                        st.markdown(f"**ФИО:** {r.get('full_name', '—')}")
+                        bd = pd.to_datetime(r.get('birth_date')).strftime('%d.%m.%Y') if pd.notna(r.get('birth_date')) else '—'
+                        st.markdown(f"**Дата рождения:** {bd}")
+                        if pd.notna(r.get('birth_date')):
+                            bd_dt = pd.to_datetime(r['birth_date'])
+                            today = pd.Timestamp.today()
+                            age = today.year - bd_dt.year - ((today.month, today.day) < (bd_dt.month, bd_dt.day))
+                            st.markdown(f"**Возраст:** {age} лет")
+                    with c2:
+                        st.markdown(f"**Игровой номер:** {int(r['jersey_number']) if pd.notna(r.get('jersey_number')) else '—'}")
+                        st.markdown(f"**Группа крови:** {r.get('blood_type', '—')} {r.get('rh_factor', '')}")
+                        st.markdown(f"**Телефон:** {r.get('phone', '—')}")
+                    with c3:
+                        st.markdown(f"**Аллергии:** {r.get('allergies') or '—'}")
+                        st.markdown(f"**Экстренный контакт:** {r.get('emergency_contact', '—')} · {r.get('emergency_phone', '—')}")
+
+                st.divider()
+
+                # Подвкладки по типам данных
+                mc_tabs = st.tabs([
+                    "🩺 Приёмы", "🏥 Осмотры", "🩹 Травмы", "💊 Лекарства",
+                    "💉 Прививки", "📏 Антропометрия", "🏃 Тесты",
+                    "🩺 Хроники", "🧪 Анализы"
+                ])
+                (mc_visits, mc_exams, mc_injuries, mc_meds,
+                 mc_vacc, mc_anthro, mc_tests, mc_chronic, mc_lab) = mc_tabs
+
+                # --- Приёмы ---
+                with mc_visits:
+                    my = df_visits[df_visits["athlete_id"] == mc_aid] if not df_visits.empty else pd.DataFrame()
+                    if my.empty:
+                        st.info("Приёмов нет.")
+                    else:
+                        cols = ["visit_date", "complaints", "diagnosis", "prescriptions"]
+                        av = [c for c in cols if c in my.columns]
+                        d = format_dates(my[av].copy(), ["visit_date"])
+                        d = d.rename(columns={"visit_date": "Дата", "complaints": "Жалобы", "diagnosis": "Диагноз", "prescriptions": "Назначения"})
+                        ev = st.dataframe(d, on_select="rerun", selection_mode="single-row", use_container_width=True, hide_index=True)
+                        if ev.selection.rows:
+                            idx = ev.selection.rows[0]
+                            if idx < len(my):
+                                v = my.iloc[idx]
+                                st.markdown("---")
+                                st.markdown(f"**Дата:** {pd.to_datetime(v['visit_date']).strftime('%d.%m.%Y') if pd.notna(v.get('visit_date')) else '—'}")
+                                st.markdown(f"**Жалобы:** {v.get('complaints') or '—'}")
+                                st.markdown(f"**Осмотр:** {v.get('examination') or '—'}")
+                                st.markdown(f"**Диагноз:** {v.get('diagnosis') or v.get('diagnosis_text') or '—'}")
+                                st.markdown(f"**Назначения:** {v.get('prescriptions') or '—'}")
+                                st.markdown(f"**Рекомендации:** {v.get('recommendations') or '—'}")
+
+                # --- Осмотры ---
+                with mc_exams:
+                    my = df_all_exams[df_all_exams["athlete_id"] == mc_aid] if not df_all_exams.empty else pd.DataFrame()
+                    if my.empty:
+                        st.info("Осмотров нет.")
+                    else:
+                        cols = ["examination_date", "exam_name", "is_approved", "next_exam_date"]
+                        av = [c for c in cols if c in my.columns]
+                        d = format_dates(my[av].copy(), ["examination_date", "next_exam_date"])
+                        d = d.rename(columns={"examination_date": "Дата", "exam_name": "Осмотр", "is_approved": "Допуск", "next_exam_date": "Следующий"})
+                        ev = st.dataframe(d, on_select="rerun", selection_mode="single-row", use_container_width=True, hide_index=True)
+                        if ev.selection.rows:
+                            idx = ev.selection.rows[0]
+                            if idx < len(my):
+                                e = my.iloc[idx]
+                                st.markdown("---")
+                                st.markdown(f"**Дата:** {pd.to_datetime(e['examination_date']).strftime('%d.%m.%Y') if pd.notna(e.get('examination_date')) else '—'}")
+                                st.markdown(f"**Тип:** {e.get('exam_name') or '—'}")
+                                st.markdown(f"**Заключение:** {e.get('result_text') or '—'}")
+                                ap = e.get("is_approved")
+                                st.markdown(f"**Допуск:** {'✅ Да' if ap else '❌ Нет' if ap is False else '—'}")
+                                st.markdown(f"**Ограничения:** {e.get('restrictions') or '—'}")
+                                if pd.notna(e.get("next_exam_date")):
+                                    st.markdown(f"**Следующий:** {pd.to_datetime(e['next_exam_date']).strftime('%d.%m.%Y')}")
+
+                # --- Травмы ---
+                with mc_injuries:
+                    my = df_injuries[df_injuries["athlete_id"] == mc_aid] if not df_injuries.empty else pd.DataFrame()
+                    if my.empty:
+                        st.info("Травм нет.")
+                    else:
+                        cols = ["incident_date", "diagnosis", "body_part", "side", "severity", "days_lost"]
+                        av = [c for c in cols if c in my.columns]
+                        d = format_dates(my[av].copy(), ["incident_date"])
+                        d = d.rename(columns={"incident_date": "Дата", "diagnosis": "Диагноз", "body_part": "Часть тела", "side": "Сторона", "severity": "Тяжесть", "days_lost": "Пропущено"})
+                        ev = st.dataframe(d, on_select="rerun", selection_mode="single-row", use_container_width=True, hide_index=True)
+                        if ev.selection.rows:
+                            idx = ev.selection.rows[0]
+                            if idx < len(my):
+                                i = my.iloc[idx]
+                                st.markdown("---")
+                                st.markdown(f"**Дата:** {pd.to_datetime(i['incident_date']).strftime('%d.%m.%Y') if pd.notna(i.get('incident_date')) else '—'}")
+                                st.markdown(f"**Диагноз:** {i.get('diagnosis') or '—'}")
+                                st.markdown(f"**Часть тела:** {i.get('body_part') or '—'} · **Сторона:** {i.get('side') or '—'}")
+                                st.markdown(f"**Тяжесть:** {i.get('severity') or '—'} · **Рецидив:** {'Да' if i.get('is_recurrent') else 'Нет'}")
+                                st.markdown(f"**Лечение:** {i.get('treatment_description') or '—'}")
+                                st.markdown(f"**Пропущено дней:** {i.get('days_lost', 0)}")
+
+                # --- Лекарства ---
+                with mc_meds:
+                    my = df_meds_current[df_meds_current["athlete_id"] == mc_aid] if not df_meds_current.empty else pd.DataFrame()
+                    if my.empty:
+                        st.info("Назначений нет.")
+                    else:
+                        cols = ["medicine_name", "dosage", "frequency", "course_start", "course_end", "wada_status"]
+                        av = [c for c in cols if c in my.columns]
+                        d = format_dates(my[av].copy(), ["course_start", "course_end"])
+                        d = d.rename(columns={"medicine_name": "Препарат", "dosage": "Дозировка", "frequency": "Кратность", "course_start": "С", "course_end": "По", "wada_status": "WADA"})
+                        ev = st.dataframe(d, on_select="rerun", selection_mode="single-row", use_container_width=True, hide_index=True)
+                        if ev.selection.rows:
+                            idx = ev.selection.rows[0]
+                            if idx < len(my):
+                                m = my.iloc[idx]
+                                st.markdown("---")
+                                st.markdown(f"**Препарат:** {m.get('medicine_name') or '—'}")
+                                st.markdown(f"**Дозировка:** {m.get('dosage') or '—'} · **Кратность:** {m.get('frequency') or '—'}")
+                                st.markdown(f"**Способ:** {m.get('administration_route') or '—'}")
+                                st.markdown(f"**Курс:** {pd.to_datetime(m['course_start']).strftime('%d.%m.%Y') if pd.notna(m.get('course_start')) else '—'} — {pd.to_datetime(m['course_end']).strftime('%d.%m.%Y') if pd.notna(m.get('course_end')) else '—'}")
+                                st.markdown(f"**WADA:** {m.get('wada_status') or '—'}")
+
+                # --- Прививки ---
+                with mc_vacc:
+                    my = df_vaccinations[df_vaccinations["athlete_id"] == mc_aid] if not df_vaccinations.empty else pd.DataFrame()
+                    if my.empty:
+                        st.info("Прививок нет.")
+                    else:
+                        cols = ["vaccination_date", "vaccine_name", "booster_date", "batch_number"]
+                        av = [c for c in cols if c in my.columns]
+                        d = format_dates(my[av].copy(), ["vaccination_date", "booster_date"])
+                        d = d.rename(columns={"vaccination_date": "Дата", "vaccine_name": "Вакцина", "booster_date": "Ревакцинация", "batch_number": "Серия"})
+                        ev = st.dataframe(d, on_select="rerun", selection_mode="single-row", use_container_width=True, hide_index=True)
+                        if ev.selection.rows:
+                            idx = ev.selection.rows[0]
+                            if idx < len(my):
+                                v = my.iloc[idx]
+                                st.markdown("---")
+                                st.markdown(f"**Вакцина:** {v.get('vaccine_name') or '—'}")
+                                st.markdown(f"**Дата:** {pd.to_datetime(v['vaccination_date']).strftime('%d.%m.%Y') if pd.notna(v.get('vaccination_date')) else '—'}")
+                                st.markdown(f"**Ревакцинация:** {pd.to_datetime(v['booster_date']).strftime('%d.%m.%Y') if pd.notna(v.get('booster_date')) else '—'}")
+                                st.markdown(f"**Серия:** {v.get('batch_number') or '—'}")
+
+                # --- Антропометрия ---
+                with mc_anthro:
+                    my = df_anthro[df_anthro["athlete_id"] == mc_aid] if not df_anthro.empty else pd.DataFrame()
+                    if my.empty:
+                        st.info("Измерений нет.")
+                    else:
+                        cols = ["measurement_date", "height", "weight", "bmi", "body_fat", "muscle_mass"]
+                        av = [c for c in cols if c in my.columns]
+                        d = format_dates(my[av].copy(), ["measurement_date"])
+                        d = d.rename(columns={"measurement_date": "Дата", "height": "Рост", "weight": "Вес", "bmi": "ИМТ", "body_fat": "% жира", "muscle_mass": "Мышцы"})
+                        ev = st.dataframe(d, on_select="rerun", selection_mode="single-row", use_container_width=True, hide_index=True)
+                        if ev.selection.rows:
+                            idx = ev.selection.rows[0]
+                            if idx < len(my):
+                                a = my.iloc[idx]
+                                st.markdown("---")
+                                st.markdown(f"**Дата:** {pd.to_datetime(a['measurement_date']).strftime('%d.%m.%Y') if pd.notna(a.get('measurement_date')) else '—'}")
+                                st.markdown(f"**Рост:** {a.get('height') or '—'} см")
+                                st.markdown(f"**Вес:** {a.get('weight') or '—'} кг")
+                                st.markdown(f"**ИМТ:** {a.get('bmi') or '—'}")
+                                st.markdown(f"**% жира:** {a.get('body_fat') or '—'}")
+                                st.markdown(f"**Мышцы:** {a.get('muscle_mass') or '—'} кг")
+
+                # --- Тесты ---
+                with mc_tests:
+                    my = df_tests[df_tests["athlete_id"] == mc_aid] if not df_tests.empty else pd.DataFrame()
+                    if my.empty:
+                        st.info("Тестов нет.")
+                    else:
+                        cols = ["test_date", "test_name", "result_raw", "result_score", "evaluation"]
+                        av = [c for c in cols if c in my.columns]
+                        d = format_dates(my[av].copy(), ["test_date"])
+                        d = d.rename(columns={"test_date": "Дата", "test_name": "Тест", "result_raw": "Результат", "result_score": "Балл", "evaluation": "Оценка"})
+                        ev = st.dataframe(d, on_select="rerun", selection_mode="single-row", use_container_width=True, hide_index=True)
+                        if ev.selection.rows:
+                            idx = ev.selection.rows[0]
+                            if idx < len(my):
+                                t = my.iloc[idx]
+                                st.markdown("---")
+                                st.markdown(f"**Дата:** {pd.to_datetime(t['test_date']).strftime('%d.%m.%Y') if pd.notna(t.get('test_date')) else '—'}")
+                                st.markdown(f"**Тест:** {t.get('test_name') or '—'}")
+                                st.markdown(f"**Условия:** {t.get('test_condition') or '—'}")
+                                st.markdown(f"**Результат:** {t.get('result_raw') or '—'}")
+                                st.markdown(f"**Балл:** {t.get('result_score') or '—'}")
+                                st.markdown(f"**Оценка:** {t.get('evaluation') or '—'}")
+
+                # --- Хроники ---
+                with mc_chronic:
+                    my = df_chronic[df_chronic["athlete_id"] == mc_aid] if not df_chronic.empty else pd.DataFrame()
+                    if my.empty:
+                        st.info("Хроник нет.")
+                    else:
+                        cols = ["diagnosis_date", "disease_name", "severity", "current_medication"]
+                        av = [c for c in cols if c in my.columns]
+                        d = format_dates(my[av].copy(), ["diagnosis_date"])
+                        d = d.rename(columns={"diagnosis_date": "Дата", "disease_name": "Заболевание", "severity": "Тяжесть", "current_medication": "Лекарства"})
+                        ev = st.dataframe(d, on_select="rerun", selection_mode="single-row", use_container_width=True, hide_index=True)
+                        if ev.selection.rows:
+                            idx = ev.selection.rows[0]
+                            if idx < len(my):
+                                ch = my.iloc[idx]
+                                st.markdown("---")
+                                st.markdown(f"**Дата:** {pd.to_datetime(ch['diagnosis_date']).strftime('%d.%m.%Y') if pd.notna(ch.get('diagnosis_date')) else '—'}")
+                                st.markdown(f"**Заболевание:** {ch.get('disease_name') or '—'}")
+                                st.markdown(f"**Тяжесть:** {ch.get('severity') or '—'}")
+                                st.markdown(f"**Постоянные препараты:** {ch.get('current_medication') or '—'}")
+                                st.markdown(f"**Рекомендации:** {ch.get('clinical_recommendations') or '—'}")
+
+                # --- Анализы ---
+                with mc_lab:
+                    my = df_lab[df_lab["athlete_id"] == mc_aid] if not df_lab.empty else pd.DataFrame()
+                    if my.empty:
+                        st.info("Анализов нет.")
+                    else:
+                        cols = ["measurement_date", "biomarker_name", "value", "unit"]
+                        av = [c for c in cols if c in my.columns]
+                        d = format_dates(my[av].copy(), ["measurement_date"])
+                        d = d.rename(columns={"measurement_date": "Дата", "biomarker_name": "Показатель", "value": "Значение", "unit": "Ед."})
+                        ev = st.dataframe(d, on_select="rerun", selection_mode="single-row", use_container_width=True, hide_index=True)
+                        if ev.selection.rows:
+                            idx = ev.selection.rows[0]
+                            if idx < len(my):
+                                l = my.iloc[idx]
+                                st.markdown("---")
+                                st.markdown(f"**Дата:** {pd.to_datetime(l['measurement_date']).strftime('%d.%m.%Y') if pd.notna(l.get('measurement_date')) else '—'}")
+                                st.markdown(f"**Показатель:** {l.get('biomarker_name') or '—'}")
+                                st.markdown(f"**Значение:** {l.get('value')} {l.get('unit') or ''}")
+                                st.markdown(f"**Примечание:** {l.get('notes') or '—'}")
     # --- ПРИЁМЫ ---
     if tab_visits is not None:
         with tab_visits:
