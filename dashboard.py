@@ -541,4 +541,321 @@ else:
                             if sel_b != "— не указана —": payload["body_part_id"] = bopts[sel_b]
 
                             supabase.table("injuries_and_illnesses").insert(payload).execute()
-                            st.success(f"✅ Травма сохран
+                            st.success(f"✅ Травма сохранена: {sel_a}")
+                            st.cache_data.clear()
+                        except Exception as e:
+                            st.error(f"Ошибка: {e}")
+
+    # --- ЛЕКАРСТВА ---
+    if tab_meds is not None:
+        with tab_meds:
+            st.header("💊 Лекарства")
+            sv, sa = st.tabs(["📋 Текущие приёмы", "✍️ Назначить лекарство"])
+
+            with sv:
+                if df_meds_current.empty:
+                    st.info("Сейчас никто не принимает лекарства.")
+                else:
+                    st.warning(f"Принимают: {len(df_meds_current)}")
+                    cols = ["jersey_number","full_name","medicine_name","dosage","course_end","wada_status"]
+                    av = [c for c in cols if c in df_meds_current.columns]
+                    d = format_dates(df_meds_current[av].copy(), ["course_end"])
+                    d = d.rename(columns={"jersey_number":"№","full_name":"ФИО","medicine_name":"Препарат","dosage":"Дозировка","course_end":"До","wada_status":"WADA"})
+                    st.dataframe(d, use_container_width=True, hide_index=True)
+
+            with sa:
+                st.subheader("✍️ Назначить лекарство")
+                with st.form("f_med", clear_on_submit=True):
+                    aopts = athlete_selectbox("med")
+                    sel_a = st.selectbox("Спортсменка *", list(aopts.keys()))
+
+                    mopts = {}
+                    if not df_medicines.empty:
+                        for _, row in df_medicines.iterrows():
+                            lbl = f"{row['name']} [{row['wada_status']}]"
+                            mopts[lbl] = row['id']
+                    sel_m = st.selectbox("Препарат *", list(mopts.keys()))
+
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        pd_ = st.date_input("Дата назначения", value=date.today(), format="DD.MM.YYYY")
+                        cs = st.date_input("Начало курса", value=date.today(), format="DD.MM.YYYY")
+                    with c2:
+                        ce = st.date_input("Конец курса", value=date.today() + timedelta(days=7), format="DD.MM.YYYY")
+                        rt = st.selectbox("Способ", ["Перорально", "Внутримышечно", "Внутривенно", "Местно", "Ингаляционно"])
+
+                    dose = st.text_input("Дозировка", placeholder="500 мг")
+                    freq = st.text_input("Кратность", placeholder="2 раза в день")
+                    tue = st.text_input("Ссылка на TUE (если требуется)")
+
+                    if st.form_submit_button("💾 Сохранить", type="primary"):
+                        try:
+                            supabase.table("medication_intake").insert({
+                                "athlete_id": aopts[sel_a],
+                                "medicine_id": mopts[sel_m],
+                                "prescribed_date": pd_.isoformat(),
+                                "course_start": cs.isoformat(),
+                                "course_end": ce.isoformat(),
+                                "dosage": dose.strip() if dose else None,
+                                "frequency": freq.strip() if freq else None,
+                                "administration_route": rt,
+                                "tue_document_link": tue.strip() if tue else None
+                            }).execute()
+                            st.success(f"✅ Назначено: {sel_a}")
+                            st.cache_data.clear()
+                        except Exception as e:
+                            st.error(f"Ошибка: {e}")
+
+    # --- ПРИВИВКИ ---
+    if tab_vaccines is not None:
+        with tab_vaccines:
+            st.header("💉 Прививки")
+            sv, sa = st.tabs(["📋 Просмотр", "✍️ Добавить"])
+
+            with sv:
+                if df_vaccinations.empty:
+                    st.info("Прививок пока нет.")
+                else:
+                    cols = ["vaccination_date","jersey_number","full_name","vaccine_name","booster_date","batch_number"]
+                    av = [c for c in cols if c in df_vaccinations.columns]
+                    d = format_dates(df_vaccinations[av].copy(), ["vaccination_date","booster_date"])
+                    d = d.rename(columns={"vaccination_date":"Дата","jersey_number":"№","full_name":"ФИО","vaccine_name":"Вакцина","booster_date":"Ревакцинация","batch_number":"Серия"})
+                    st.dataframe(d, use_container_width=True, hide_index=True)
+
+            with sa:
+                st.subheader("✍️ Добавить прививку")
+                with st.form("f_vac", clear_on_submit=True):
+                    aopts = athlete_selectbox("vac")
+                    sel_a = st.selectbox("Спортсменка *", list(aopts.keys()))
+                    vn = st.text_input("Название вакцины *", placeholder="АДС-М, Гепатит B, Грипп")
+
+                    c1, c2 = st.columns(2)
+                    with c1: vd = st.date_input("Дата прививки *", value=date.today(), format="DD.MM.YYYY")
+                    with c2: bd = st.date_input("Дата ревакцинации", value=None, format="DD.MM.YYYY")
+
+                    bn = st.text_input("Номер серии")
+                    if st.form_submit_button("💾 Сохранить", type="primary"):
+                        if not vn.strip():
+                            st.error("Введите название вакцины")
+                        else:
+                            try:
+                                supabase.table("vaccinations").insert({
+                                    "athlete_id": aopts[sel_a],
+                                    "vaccine_name": vn.strip(),
+                                    "vaccination_date": vd.isoformat(),
+                                    "booster_date": bd.isoformat() if bd else None,
+                                    "batch_number": bn.strip() if bn else None
+                                }).execute()
+                                st.success(f"✅ Прививка добавлена: {sel_a}")
+                                st.cache_data.clear()
+                            except Exception as e:
+                                st.error(f"Ошибка: {e}")
+
+    # --- АНТРОПОМЕТРИЯ ---
+    if tab_anthro is not None:
+        with tab_anthro:
+            st.header("📏 Антропометрия")
+            sv, sa = st.tabs(["📋 Просмотр", "✍️ Новое измерение"])
+
+            with sv:
+                if df_anthro.empty:
+                    st.info("Измерений пока нет.")
+                else:
+                    cols = ["measurement_date","jersey_number","full_name","height","weight","bmi","body_fat","muscle_mass","thigh_circuit"]
+                    av = [c for c in cols if c in df_anthro.columns]
+                    d = format_dates(df_anthro[av].copy(), ["measurement_date"])
+                    d = d.rename(columns={"measurement_date":"Дата","jersey_number":"№","full_name":"ФИО","height":"Рост","weight":"Вес","bmi":"ИМТ","body_fat":"% жира","muscle_mass":"Мышцы","thigh_circuit":"Бедро"})
+                    st.dataframe(d, use_container_width=True, hide_index=True)
+
+            with sa:
+                st.subheader("✍️ Новое измерение")
+                with st.form("f_ant", clear_on_submit=True):
+                    aopts = athlete_selectbox("ant")
+                    sel_a = st.selectbox("Спортсменка *", list(aopts.keys()))
+                    md = st.date_input("Дата измерения *", value=date.today(), format="DD.MM.YYYY")
+                    c1, c2, c3 = st.columns(3)
+                    with c1:
+                        h = st.number_input("Рост (см)", min_value=0.0, max_value=250.0, step=0.5, value=0.0)
+                        w = st.number_input("Вес (кг)", min_value=0.0, max_value=200.0, step=0.1, value=0.0)
+                    with c2:
+                        bf = st.number_input("% жира", min_value=0.0, max_value=60.0, step=0.1, value=0.0)
+                        mm = st.number_input("Мышечная масса (кг)", min_value=0.0, max_value=100.0, step=0.1, value=0.0)
+                    with c3:
+                        cc = st.number_input("Обхват груди (см)", min_value=0.0, max_value=200.0, step=0.5, value=0.0)
+                        tc = st.number_input("Обхват бедра (см)", min_value=0.0, max_value=120.0, step=0.5, value=0.0)
+
+                    if st.form_submit_button("💾 Сохранить", type="primary"):
+                        try:
+                            bmi = round(w / ((h/100) ** 2), 1) if h > 0 and w > 0 else None
+                            supabase.table("anthropometry").insert({
+                                "athlete_id": aopts[sel_a],
+                                "measurement_date": md.isoformat(),
+                                "height": h if h > 0 else None,
+                                "weight": w if w > 0 else None,
+                                "bmi": bmi,
+                                "body_fat": bf if bf > 0 else None,
+                                "muscle_mass": mm if mm > 0 else None,
+                                "chest_circuit": cc if cc > 0 else None,
+                                "thigh_circuit": tc if tc > 0 else None
+                            }).execute()
+                            st.success(f"✅ Измерение сохранено: {sel_a}")
+                            st.cache_data.clear()
+                        except Exception as e:
+                            st.error(f"Ошибка: {e}")
+
+    # --- ФУНКЦИОНАЛЬНЫЕ ТЕСТЫ ---
+    if tab_tests is not None:
+        with tab_tests:
+            st.header("🏃 Функциональные тесты")
+            sv, sa = st.tabs(["📋 Просмотр", "✍️ Внести тест"])
+
+            with sv:
+                if df_tests.empty:
+                    st.info("Тестов пока нет.")
+                else:
+                    cols = ["test_date","jersey_number","full_name","test_name","result_raw","result_score","evaluation"]
+                    av = [c for c in cols if c in df_tests.columns]
+                    d = format_dates(df_tests[av].copy(), ["test_date"])
+                    d = d.rename(columns={"test_date":"Дата","jersey_number":"№","full_name":"ФИО","test_name":"Тест","result_raw":"Результат","result_score":"Балл","evaluation":"Оценка"})
+                    st.dataframe(d, use_container_width=True, hide_index=True)
+
+            with sa:
+                st.subheader("✍️ Внести тест")
+                with st.form("f_test", clear_on_submit=True):
+                    aopts = athlete_selectbox("test")
+                    sel_a = st.selectbox("Спортсменка *", list(aopts.keys()))
+
+                    topts = {}
+                    if not df_test_types.empty:
+                        for _, row in df_test_types.iterrows():
+                            topts[f"{row['name']} ({row['unit']})"] = row['id']
+                    sel_t = st.selectbox("Тип теста *", list(topts.keys()))
+
+                    td = st.date_input("Дата теста *", value=date.today(), format="DD.MM.YYYY")
+                    tc = st.text_input("Условия проведения", placeholder="Утром до тренировки")
+                    rr = st.text_area("Сырые данные", placeholder="Например: 150 вт, ЧСС 145", height=60)
+                    rs = st.number_input("Итоговый балл", min_value=0.0, value=0.0, step=0.1)
+                    ev = st.selectbox("Оценка", ["— не указана —", "Высокая", "Средняя", "Низкая", "Норма", "Патология", "Отлично", "Хорошо", "Удовлетворительно", "Неудовлетворительно"])
+
+                    if st.form_submit_button("💾 Сохранить", type="primary"):
+                        try:
+                            payload = {
+                                "athlete_id": aopts[sel_a],
+                                "test_type_id": topts[sel_t],
+                                "test_date": td.isoformat(),
+                                "test_condition": tc.strip() if tc else None,
+                                "result_raw": rr.strip() if rr else None,
+                                "result_score": rs if rs > 0 else None,
+                            }
+                            if ev != "— не указана —": payload["evaluation"] = ev
+                            supabase.table("functional_tests").insert(payload).execute()
+                            st.success(f"✅ Тест сохранён: {sel_a}")
+                            st.cache_data.clear()
+                        except Exception as e:
+                            st.error(f"Ошибка: {e}")
+
+    # --- ХРОНИЧЕСКИЕ ЗАБОЛЕВАНИЯ ---
+    if tab_chronic is not None:
+        with tab_chronic:
+            st.header("🩺 Хронические заболевания")
+            sv, sa = st.tabs(["📋 Просмотр", "✍️ Добавить"])
+
+            with sv:
+                if df_chronic.empty:
+                    st.info("Хронических заболеваний не зарегистрировано.")
+                else:
+                    cols = ["diagnosis_date","jersey_number","full_name","disease_name","severity","current_medication","clinical_recommendations"]
+                    av = [c for c in cols if c in df_chronic.columns]
+                    d = format_dates(df_chronic[av].copy(), ["diagnosis_date"])
+                    d = d.rename(columns={"diagnosis_date":"Дата","jersey_number":"№","full_name":"ФИО","disease_name":"Заболевание","severity":"Тяжесть","current_medication":"Лекарства","clinical_recommendations":"Рекомендации"})
+                    st.dataframe(d, use_container_width=True, hide_index=True)
+
+            with sa:
+                st.subheader("✍️ Добавить хроническое заболевание")
+                with st.form("f_chr", clear_on_submit=True):
+                    aopts = athlete_selectbox("chr")
+                    sel_a = st.selectbox("Спортсменка *", list(aopts.keys()))
+                    dn = st.text_input("Название заболевания *", placeholder="Бронхиальная астма")
+                    dd = st.date_input("Дата постановки диагноза *", value=date.today(), format="DD.MM.YYYY")
+                    sev = st.selectbox("Тяжесть", ["Легкая", "Средняя", "Тяжелая"])
+                    cm = st.text_area("Постоянные препараты", height=60)
+                    cr = st.text_area("Клинические рекомендации", height=60)
+
+                    if st.form_submit_button("💾 Сохранить", type="primary"):
+                        if not dn.strip():
+                            st.error("Введите название")
+                        else:
+                            try:
+                                supabase.table("chronic_diseases").insert({
+                                    "athlete_id": aopts[sel_a],
+                                    "disease_name": dn.strip(),
+                                    "diagnosis_date": dd.isoformat(),
+                                    "severity": sev,
+                                    "current_medication": cm.strip() if cm else None,
+                                    "clinical_recommendations": cr.strip() if cr else None
+                                }).execute()
+                                st.success(f"✅ Заболевание добавлено: {sel_a}")
+                                st.cache_data.clear()
+                            except Exception as e:
+                                st.error(f"Ошибка: {e}")
+
+    # --- АНАЛИЗЫ ---
+    if tab_lab is not None:
+        with tab_lab:
+            st.header("🧪 Лабораторные анализы")
+            sv, sa = st.tabs(["📋 Просмотр", "✍️ Внести результат"])
+
+            with sv:
+                if df_lab.empty:
+                    st.info("Результатов анализов нет.")
+                else:
+                    cols = ["measurement_date","jersey_number","full_name","biomarker_name","value","unit"]
+                    av = [c for c in cols if c in df_lab.columns]
+                    d = format_dates(df_lab[av].copy(), ["measurement_date"])
+                    d = d.rename(columns={"measurement_date":"Дата","jersey_number":"№","full_name":"ФИО","biomarker_name":"Показатель","value":"Значение","unit":"Ед."})
+                    st.dataframe(d, use_container_width=True, hide_index=True)
+
+            with sa:
+                st.subheader("✍️ Внести результат анализа")
+                with st.form("f_lab", clear_on_submit=True):
+                    aopts = athlete_selectbox("lab")
+                    sel_a = st.selectbox("Спортсменка *", list(aopts.keys()))
+
+                    bopts = {}
+                    if not df_biomarkers.empty:
+                        for _, row in df_biomarkers.iterrows():
+                            bopts[f"{row['name']} ({row['unit']})"] = row['id']
+                    sel_b = st.selectbox("Показатель *", list(bopts.keys()))
+
+                    md = st.date_input("Дата сдачи *", value=date.today(), format="DD.MM.YYYY")
+                    val = st.number_input("Значение *", value=0.0, step=0.01)
+                    nt = st.text_input("Примечание")
+
+                    if st.form_submit_button("💾 Сохранить", type="primary"):
+                        try:
+                            supabase.table("lab_results").insert({
+                                "athlete_id": aopts[sel_a],
+                                "biomarker_id": bopts[sel_b],
+                                "measurement_date": md.isoformat(),
+                                "value": val,
+                                "notes": nt.strip() if nt else None
+                            }).execute()
+                            st.success(f"✅ Анализ сохранён: {sel_a}")
+                            st.cache_data.clear()
+                        except Exception as e:
+                            st.error(f"Ошибка: {e}")
+
+# ============ ФУТЕР ============
+st.divider()
+c1, c2 = st.columns([4, 1])
+with c1:
+    if st.button("🔄 Обновить данные"):
+        st.cache_data.clear()
+        st.rerun()
+with c2:
+    if st.button("🚪 Выйти"):
+        st.session_state["authenticated"] = False
+        st.session_state.pop("user", None)
+        st.rerun()
+
+st.caption(f"Последнее обновление: {pd.Timestamp.now().strftime('%H:%M:%S')}")
