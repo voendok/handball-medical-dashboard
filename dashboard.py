@@ -1045,12 +1045,23 @@ else:
                             st.markdown(f"**Возраст:** {age} лет")
                     with c2:
                         st.markdown(f"**Игровой номер:** {int(r['jersey_number']) if pd.notna(r.get('jersey_number')) else '—'}")
-                        st.markdown(f"**Группа крови:** {r.get('blood_type', '—')} {r.get('rh_factor', '')}")
-                        st.markdown(f"**Телефон:** {r.get('phone', '—')}")
+                        bt = r.get('blood_type')
+                        rh = r.get('rh_factor')
+                        blood_str = ""
+                        if pd.notna(bt) and str(bt) not in ["nan", "None", ""]:
+                            blood_str = str(bt)
+                        if pd.notna(rh) and str(rh) not in ["nan", "None", ""]:
+                            blood_str += " " + str(rh)
+                        if not blood_str:
+                            blood_str = "—"
+                        st.markdown(f"**Группа крови:** {blood_str}")                        st.markdown(f"**Телефон:** {r.get('phone', '—')}")
                     with c3:
                         st.markdown(f"**Аллергии:** {r.get('allergies') or '—'}")
-                        st.markdown(f"**Экстренный контакт:** {r.get('emergency_contact', '—')} · {r.get('emergency_phone', '—')}")
-
+                        ec = r.get('emergency_contact')
+                        ecp = r.get('emergency_phone')
+                        ec_str = ec if pd.notna(ec) and str(ec) not in ["nan", "None", ""] else '—'
+                        ecp_str = ecp if pd.notna(ecp) and str(ecp) not in ["nan", "None", ""] else ''
+                        st.markdown(f"**Экстренный контакт:** {ec_str} {ecp_str}".strip())
                 st.divider()
 
                 # Подвкладки по типам данных
