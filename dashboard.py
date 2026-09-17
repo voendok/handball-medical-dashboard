@@ -161,7 +161,19 @@ def load_injuries(days=365):
         df["diagnosis"] = df["dict_diagnoses"].apply(lambda x: x["name"] if x else None)
         df = df.drop(columns=["athletes", "dict_body_parts", "dict_diagnoses"])
     return df
-
+@st.cache_data(ttl=60)
+def load_injuries_all():
+    r = supabase.table("injuries_and_illnesses").select(
+        "*, athletes(full_name, jersey_number), dict_body_parts(name), dict_diagnoses(name)"
+    ).order("incident_date", desc=True).execute()
+    df = pd.DataFrame(r.data)
+    if not df.empty:
+        df["full_name"] = df["athletes"].apply(lambda x: x["full_name"] if x else None)
+        df["jersey_number"] = df["athletes"].apply(lambda x: x["jersey_number"] if x else None)
+        df["body_part"] = df["dict_body_parts"].apply(lambda x: x["name"] if x else None)
+        df["diagnosis"] = df["dict_diagnoses"].apply(lambda x: x["name"] if x else None)
+        df = df.drop(columns=["athletes", "dict_body_parts", "dict_diagnoses"])
+    return df
 @st.cache_data(ttl=60)
 def load_medications():
     r = supabase.table("medication_intake").select(
@@ -276,6 +288,7 @@ df_athletes_full = load_athletes_full()
 df_logs = load_health_logs(30)
 df_all_exams = load_all_examinations()
 df_injuries = load_injuries(365)
+df_injuries_all = load_injuries_all()
 df_meds_current = load_medications()
 df_vaccinations = load_vaccinations()
 df_anthro = load_anthropometry()
@@ -777,9 +790,9 @@ else:
                                 if pd.notna(e.get("next_exam_date")):
                                     st.markdown(f"**Следующий:** {pd.to_datetime(e['next_exam_date']).strftime('%d.%m.%Y')}")
 
-                # --- Травмы ---
+                # --- Травмы (все, за всё время) ---
                 with mc_injuries:
-                    my = df_injuries[df_injuries["athlete_id"] == mc_aid] if not df_injuries.empty else pd.DataFrame()
+                    my = df_injuries_all[df_injuries_all["athlete_id"] == mc_aid] if not df_injuries_all.empty else pd.DataFrame()
                     if my.empty:
                         st.info("Травм нет.")
                     else:
@@ -797,6 +810,7 @@ else:
                                 st.markdown(f"**Диагноз:** {i.get('diagnosis') or '—'}")
                                 st.markdown(f"**Часть тела:** {i.get('body_part') or '—'} · **Сторона:** {i.get('side') or '—'}")
                                 st.markdown(f"**Тяжесть:** {i.get('severity') or '—'} · **Рецидив:** {'Да' if i.get('is_recurrent') else 'Нет'}")
+                                st.markdown(f"**Механизм:** {i.get('mechanism') or '—'}")
                                 st.markdown(f"**Лечение:** {i.get('treatment_description') or '—'}")
                                 st.markdown(f"**Пропущено дней:** {i.get('days_lost', 0)}")
 
