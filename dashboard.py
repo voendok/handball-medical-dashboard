@@ -1054,7 +1054,8 @@ else:
                             blood_str += " " + str(rh)
                         if not blood_str:
                             blood_str = "—"
-                        st.markdown(f"**Группа крови:** {blood_str}")                        st.markdown(f"**Телефон:** {r.get('phone', '—')}")
+                        st.markdown(f"**Группа крови:** {blood_str}")
+                        st.markdown(f"**Телефон:** {r.get('phone', '—')}")
                     with c3:
                         st.markdown(f"**Аллергии:** {r.get('allergies') or '—'}")
                         ec = r.get('emergency_contact')
