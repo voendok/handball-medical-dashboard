@@ -1273,7 +1273,7 @@ else:
                         except Exception as e:
                             st.error(f"Ошибка: {e}")
 
-      if tab_meds is not None:
+    if tab_meds is not None:
         with tab_meds:
             st.header("💊 Лекарства")
             sv, sa = st.tabs(["📋 Все приёмы", "✍️ Назначить"])
