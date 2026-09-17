@@ -65,7 +65,6 @@ def format_dates(df, date_columns):
     return df
 
 def athlete_options_dict():
-    """Словарь {label: id} для выбора спортсменки"""
     df_a = load_athletes()
     opts = {}
     if not df_a.empty:
@@ -147,6 +146,7 @@ def load_health_logs(days=30):
         df["jersey_number"] = df["athletes"].apply(lambda x: x["jersey_number"] if x else None)
         df = df.drop(columns=["athletes"])
     return df
+
 @st.cache_data(ttl=60)
 def load_injuries(days=365):
     since = (date.today() - timedelta(days=days)).isoformat()
@@ -255,7 +255,6 @@ def load_lab_results():
 
 @st.cache_data(ttl=60)
 def load_doctor_visits():
-    """Журнал приёмов врача"""
     r = supabase.table("doctor_visits").select(
         "*, athletes(full_name, jersey_number), dict_diagnoses(name, mkb_code)"
     ).order("visit_date", desc=True).execute()
@@ -269,7 +268,7 @@ def load_doctor_visits():
         df = df.drop(columns=["athletes", "dict_diagnoses"])
     return df
 
-# ============ ЗАГРУЗКА ВСЕГО ============
+# ============ ЗАГРУЗКА ============
 df_dashboard = load_today_dashboard()
 df_missing = load_missing_reports()
 df_overdue = load_overdue_exams()
@@ -285,7 +284,6 @@ df_tests = load_functional_tests()
 df_chronic = load_chronic_diseases()
 df_lab = load_lab_results()
 df_visits = load_doctor_visits()
-
 df_body_parts = load_body_parts()
 df_diagnoses = load_diagnoses()
 df_medicines = load_medicines()
@@ -300,6 +298,7 @@ if user_role == "athlete":
     st.caption(f"Личный кабинет спортсменки · {user.get('full_name', '')}")
 else:
     st.caption(f"Пользователь: {user.get('full_name', 'Гость')} ({user_role})")
+
 # ============ ЛИЧНЫЙ КАБИНЕТ СПОРТСМЕНКИ ============
 if user_role == "athlete" and user_athlete_id:
     tab_status, tab_dynamics, tab_exams_self = st.tabs([
@@ -365,20 +364,17 @@ if user_role == "athlete" and user_athlete_id:
 
 # ============ ДАШБОРД ВРАЧА / ТРЕНЕРА / АДМИНА ============
 else:
-    # Вкладки по ролям
     if user_role == "coach":
         tabs = st.tabs(["📊 Сегодня", "📈 Динамика"])
         tab_today, tab_dynamics = tabs
         tab_cards = tab_visits = tab_exams = tab_injuries = None
         tab_meds = tab_vaccines = tab_anthro = tab_tests = None
         tab_chronic = tab_lab = None
-
     elif user_role == "masseur":
         tabs = st.tabs(["📊 Сегодня", "📈 Динамика", "🩹 Травмы", "📏 Антропометрия"])
         tab_today, tab_dynamics, tab_injuries, tab_anthro = tabs
         tab_cards = tab_visits = tab_exams = None
         tab_meds = tab_vaccines = tab_tests = tab_chronic = tab_lab = None
-
     else:  # admin, doctor
         tabs = st.tabs([
             "📊 Сегодня", "📈 Динамика",
@@ -473,7 +469,7 @@ else:
                     d = dfc[["borg_rating"]].dropna(); d.columns = ["Борг"]
                     st.line_chart(d, use_container_width=True)
 
-    # --- КАРТОЧКИ СПОРТСМЕНОК ---
+    # --- КАРТОЧКИ ---
     if tab_cards is not None:
         with tab_cards:
             st.header("👤 Карточки спортсменок")
@@ -487,12 +483,10 @@ else:
                     cols_show = ["jersey_number", "full_name", "birth_date", "blood_type", "rh_factor", "handball_start_year", "phone"]
                     av = [c for c in cols_show if c in df_athletes_full.columns]
                     d = df_athletes_full[av].copy()
-                    # Вычисляем возраст
                     if "birth_date" in d.columns:
                         d["Возраст"] = pd.to_datetime(d["birth_date"], errors='coerce').apply(
                             lambda x: date.today().year - x.year - ((date.today().month, date.today().day) < (x.month, x.day)) if pd.notna(x) else None
                         )
-                    # Стаж
                     if "handball_start_year" in d.columns:
                         d["Стаж"] = date.today().year - d["handball_start_year"]
                     d = d.rename(columns={
@@ -502,7 +496,6 @@ else:
                     })
                     if "Дата рождения" in d.columns:
                         d["Дата рождения"] = pd.to_datetime(d["Дата рождения"], errors='coerce').dt.strftime('%d.%m.%Y')
-                    # Порядок колонок: №, ФИО, Дата рождения, Возраст, Кровь, Резус, Год начала, Стаж, Телефон
                     desired_order = ["№", "ФИО", "Дата рождения", "Возраст", "Кровь", "Резус", "Год начала", "Стаж", "Телефон"]
                     final_cols = [c for c in desired_order if c in d.columns]
                     st.dataframe(d[final_cols], use_container_width=True, hide_index=True)
@@ -515,11 +508,10 @@ else:
                         aid = opts[sel]
                         row = df_athletes_full[df_athletes_full["id"] == aid].iloc[0]
                         c1, c2 = st.columns(2)
-                           with c1:
+                        with c1:
                             st.markdown(f"**ФИО:** {row.get('full_name', '—')}")
                             bd = pd.to_datetime(row.get('birth_date')).strftime('%d.%m.%Y') if pd.notna(row.get('birth_date')) else '—'
                             st.markdown(f"**Дата рождения:** {bd}")
-                            # Вычисляем возраст
                             if pd.notna(row.get('birth_date')):
                                 bd_dt = pd.to_datetime(row['birth_date'])
                                 today = pd.Timestamp.today()
@@ -564,7 +556,8 @@ else:
                                     hy = st.number_input("Год начала занятий гандболом", min_value=1950, max_value=date.today().year, value=int(cur["handball_start_year"]) if pd.notna(cur.get("handball_start_year")) else date.today().year)
                                 with c2:
                                     phone = st.text_input("Телефон", value=cur.get("phone", "") or "")
-                                    address = st.text_input("Адрес", value=cur.get("address", "") or "")                                    
+                                    address = st.text_input("Адрес", value=cur.get("address", "") or "")
+
                                 st.markdown("### 🩸 Медицинские данные")
                                 c3, c4 = st.columns(2)
                                 with c3:
@@ -597,7 +590,7 @@ else:
                                                 "jersey_number": int(jersey) if jersey > 0 else None,
                                                 "handball_start_year": int(hy),
                                                 "phone": phone.strip() or None,
-                                                "address": address.strip() or None,                                               
+                                                "address": address.strip() or None,
                                                 "blood_type": blood_type if blood_type != "— не указана —" else None,
                                                 "rh_factor": rh if rh != "— не указан —" else None,
                                                 "emergency_contact": emergency_contact.strip() or None,
@@ -623,7 +616,7 @@ else:
                         with c2:
                             phone = st.text_input("Телефон", placeholder="+375 29 123-45-67")
                             address = st.text_input("Адрес")
-                           
+
                         st.markdown("### 🩸 Медицинские данные")
                         c3, c4 = st.columns(2)
                         with c3:
@@ -666,7 +659,7 @@ else:
                                 except Exception as e:
                                     st.error(f"Ошибка: {e}")
 
-    # --- ПРИЁМЫ ВРАЧА ---
+    # --- ПРИЁМЫ ---
     if tab_visits is not None:
         with tab_visits:
             st.header("🩺 Журнал приёмов врача")
@@ -677,7 +670,6 @@ else:
                     st.info("Приёмов пока не зарегистрировано.")
                 else:
                     st.caption(f"Всего приёмов: {len(df_visits)}")
-                    # Фильтр по спортсменке
                     filt_opts = ["Все"] + [f"№{int(r['jersey_number'])} — {r['full_name']}" for _, r in df_visits.drop_duplicates(subset=["athlete_id"]).iterrows() if pd.notna(r.get("jersey_number"))]
                     filt = st.selectbox("Фильтр по спортсменке", filt_opts)
                     if filt != "Все":
@@ -696,7 +688,6 @@ else:
                     })
                     st.dataframe(d, use_container_width=True, hide_index=True)
 
-                    # Детальный просмотр
                     st.divider()
                     st.subheader("👁️ Детальный просмотр")
                     if not df_visits_show.empty:
@@ -724,16 +715,13 @@ else:
                 with st.form("form_visit", clear_on_submit=True):
                     opts_v = athlete_options_dict()
                     sel_a = st.selectbox("Спортсменка *", list(opts_v.keys()))
-
                     c1, c2 = st.columns(2)
                     with c1:
                         vdate = st.date_input("Дата приёма *", value=date.today(), format="DD.MM.YYYY")
                     with c2:
                         nvdate = st.date_input("Дата следующего приёма", value=None, format="DD.MM.YYYY")
-
                     complaints = st.text_area("Жалобы", height=80, placeholder="На что жалуется спортсменка")
                     examination = st.text_area("Данные осмотра", height=100, placeholder="Объективные данные, измерения, результаты")
-
                     dopts = {}
                     if not df_diagnoses.empty:
                         for _, row in df_diagnoses.iterrows():
@@ -741,10 +729,8 @@ else:
                             dopts[lbl] = row['id']
                     sel_d = st.selectbox("Диагноз (МКБ)", ["— не указан —"] + list(dopts.keys()))
                     diagnosis_text = st.text_input("Диагноз текстом (если нет в МКБ)")
-
                     prescriptions = st.text_area("Назначения", height=80, placeholder="Лекарства, процедуры, режим")
                     recommendations = st.text_area("Рекомендации", height=60)
-
                     if st.form_submit_button("💾 Сохранить приём", type="primary"):
                         try:
                             payload = {
@@ -760,18 +746,17 @@ else:
                                 payload["diagnosis_id"] = dopts[sel_d]
                             if diagnosis_text.strip():
                                 payload["diagnosis_text"] = diagnosis_text.strip()
-
                             supabase.table("doctor_visits").insert(payload).execute()
                             st.success(f"✅ Приём сохранён: {sel_a}")
                             st.cache_data.clear()
                         except Exception as e:
                             st.error(f"Ошибка: {e}")
+
     # --- ОСМОТРЫ ---
     if tab_exams is not None:
         with tab_exams:
             st.header("🏥 Медицинские осмотры")
             sv, sa = st.tabs(["📋 Просмотр", "✍️ Внести осмотр"])
-
             with sv:
                 st.subheader("⚠️ Просроченные")
                 if not df_overdue.empty:
@@ -780,7 +765,6 @@ else:
                     st.dataframe(d, use_container_width=True, hide_index=True)
                 else:
                     st.success("✅ Всё в порядке")
-
                 st.divider()
                 st.subheader("📋 Все осмотры (последние 50)")
                 if not df_all_exams.empty:
@@ -795,7 +779,6 @@ else:
                     st.dataframe(d, use_container_width=True, hide_index=True)
                 else:
                     st.info("Осмотров пока нет.")
-
             with sa:
                 st.subheader("✍️ Внести новый осмотр")
                 with st.form("f_exam", clear_on_submit=True):
@@ -843,7 +826,6 @@ else:
         with tab_injuries:
             st.header("🩹 Травмы и заболевания")
             sv, sa = st.tabs(["📋 Просмотр (365 дней)", "✍️ Внести травму"])
-
             with sv:
                 if df_injuries.empty:
                     st.info("За 365 дней травм нет.")
@@ -858,7 +840,6 @@ else:
                         "side": "Сторона", "severity": "Тяжесть", "days_lost": "Пропущено"
                     })
                     st.dataframe(d, use_container_width=True, hide_index=True)
-
             with sa:
                 st.subheader("✍️ Внести травму")
                 with st.form("f_inj", clear_on_submit=True):
@@ -908,7 +889,6 @@ else:
         with tab_meds:
             st.header("💊 Лекарства")
             sv, sa = st.tabs(["📋 Текущие приёмы", "✍️ Назначить"])
-
             with sv:
                 if df_meds_current.empty:
                     st.info("Сейчас никто не принимает лекарства.")
@@ -922,7 +902,6 @@ else:
                         "dosage": "Дозировка", "course_end": "До", "wada_status": "WADA"
                     })
                     st.dataframe(d, use_container_width=True, hide_index=True)
-
             with sa:
                 st.subheader("✍️ Назначить лекарство")
                 with st.form("f_med", clear_on_submit=True):
@@ -1109,7 +1088,7 @@ else:
                         except Exception as e:
                             st.error(f"Ошибка: {e}")
 
-    # --- ХРОНИЧЕСКИЕ ЗАБОЛЕВАНИЯ ---
+    # --- ХРОНИКИ ---
     if tab_chronic is not None:
         with tab_chronic:
             st.header("🩺 Хронические заболевания")
