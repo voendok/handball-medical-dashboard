@@ -313,8 +313,8 @@ else:
 
 # ============ ЛИЧНЫЙ КАБИНЕТ СПОРТСМЕНКИ ============
 if user_role == "athlete" and user_athlete_id:
-    tab_status, tab_dynamics, tab_exams_self, tab_my_card = st.tabs([
-        "📊 Мой статус", "📈 Моя динамика", "🏥 Мои осмотры", "🗂️ Моя карта"])
+    tab_status, tab_dynamics, tab_my_card = st.tabs([
+        "📊 Мой статус", "📈 Моя динамика", "🗂️ Моя карта"])
     with tab_status:
         st.header("📊 Мой статус на сегодня")
         if df_athletes.empty or "id" not in df_athletes.columns:
@@ -363,25 +363,7 @@ if user_role == "athlete" and user_athlete_id:
                 if not o.empty:
                     o["Разница"] = o["ortho_hr_after"] - o["morning_hr"]
                     st.line_chart(o[["Разница"]], use_container_width=True)
-
-    with tab_exams_self:
-        st.header("🏥 Мои медицинские осмотры")
-        if df_all_exams.empty or "athlete_id" not in df_all_exams.columns:
-            st.info("Осмотры пока не внесены.")
-        else:
-            my_exams = df_all_exams[df_all_exams["athlete_id"] == user_athlete_id]
-            if my_exams.empty:
-                st.info("Осмотры пока не внесены.")
-            else:
-                cols = ["examination_date", "exam_name", "is_approved", "next_exam_date", "restrictions"]
-                av = [c for c in cols if c in my_exams.columns]
-                d = format_dates(my_exams[av].copy(), ["examination_date", "next_exam_date"])
-                d = d.rename(columns={
-                    "examination_date": "Дата", "exam_name": "Осмотр",
-                    "is_approved": "Допуск", "next_exam_date": "Следующий",
-                    "restrictions": "Ограничения"
-                })
-                st.dataframe(d, use_container_width=True, hide_index=True)
+    
     with tab_my_card:
         st.header("🗂️ Моя медицинская карта")
         st.caption("Здесь отображается вся ваша медицинская история. Данные только для просмотра.")
