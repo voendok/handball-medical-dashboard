@@ -402,11 +402,22 @@ if user_role == "athlete" and user_athlete_id:
                     st.markdown(f"**Возраст:** {age} лет")
             with c2:
                 st.markdown(f"**Игровой номер:** {int(r['jersey_number']) if pd.notna(r.get('jersey_number')) else '—'}")
-                st.markdown(f"**Группа крови:** {r.get('blood_type', '—')} {r.get('rh_factor', '')}")
+                bt = r.get('blood_type')
+                rh = r.get('rh_factor')
+                blood_str = ""
+                if pd.notna(bt) and str(bt) not in ["nan", "None", ""]:
+                    blood_str = str(bt)
+                if pd.notna(rh) and str(rh) not in ["nan", "None", ""]:
+                    blood_str += " " + str(rh)
+                if not blood_str:
+                    blood_str = "—"
+                st.markdown(f"**Группа крови:** {blood_str}")
                 st.markdown(f"**Год начала занятий:** {int(r['handball_start_year']) if pd.notna(r.get('handball_start_year')) else '—'}")
             with c3:
                 st.markdown(f"**Аллергии:** {r.get('allergies') or '—'}")
-                st.markdown(f"**Экстренный контакт:** {r.get('emergency_contact', '—')}")
+                ec = r.get('emergency_contact')
+                ec_str = ec if pd.notna(ec) and str(ec) not in ["nan", "None", ""] else '—'
+                st.markdown(f"**Экстренный контакт:** {ec_str}")
 
         st.divider()
 
