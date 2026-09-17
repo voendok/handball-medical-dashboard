@@ -298,7 +298,6 @@ if user_role == "athlete":
     st.caption(f"Личный кабинет спортсменки · {user.get('full_name', '')}")
 else:
     st.caption(f"Пользователь: {user.get('full_name', 'Гость')} ({user_role})")
-
 # ============ ЛИЧНЫЙ КАБИНЕТ СПОРТСМЕНКИ ============
 if user_role == "athlete" and user_athlete_id:
     tab_status, tab_dynamics, tab_exams_self = st.tabs([
@@ -480,6 +479,8 @@ else:
                     st.info("Нет активных спортсменок.")
                 else:
                     st.caption(f"Всего спортсменок: {len(df_athletes_full)}")
+
+                    # Готовим данные с возрастом и стажем
                     cols_show = ["jersey_number", "full_name", "birth_date", "blood_type", "rh_factor", "handball_start_year", "phone"]
                     av = [c for c in cols_show if c in df_athletes_full.columns]
                     d = df_athletes_full[av].copy()
@@ -498,15 +499,40 @@ else:
                         d["Дата рождения"] = pd.to_datetime(d["Дата рождения"], errors='coerce').dt.strftime('%d.%m.%Y')
                     desired_order = ["№", "ФИО", "Дата рождения", "Возраст", "Кровь", "Резус", "Год начала", "Стаж", "Телефон"]
                     final_cols = [c for c in desired_order if c in d.columns]
-                    st.dataframe(d[final_cols], use_container_width=True, hide_index=True)
+                    d = d[final_cols]
+
+                    # Таблица с кликом по строке
+                    event = st.dataframe(
+                        d,
+                        on_select="rerun",
+                        selection_mode="single-row",
+                        use_container_width=True,
+                        hide_index=True
+                    )
 
                     st.divider()
-                    st.subheader("👁️ Детальная карточка")
+                    st.subheader("👁️ Детальная информация")
+
+                    # Selectbox — синхронизация с кликом
                     opts = athlete_options_dict()
-                    sel = st.selectbox("Выберите спортсменку", list(opts.keys()), key="card_view")
-                    if sel:
-                        aid = opts[sel]
-                        row = df_athletes_full[df_athletes_full["id"] == aid].iloc[0]
+                    sel_key = st.selectbox("Выберите спортсменку", ["— не выбрано —"] + list(opts.keys()), key="card_view")
+
+                    # Определяем, кого показать: клик или selectbox
+                    selected_aid = None
+                    if event.selection.rows:
+                        idx = event.selection.rows[0]
+                        if "№" in d.columns and idx < len(df_athletes_full):
+                            # Сопоставляем по ФИО (надёжнее — по №)
+                            selected_jersey = d.iloc[idx]["№"]
+                            row_match = df_athletes_full[df_athletes_full["jersey_number"] == selected_jersey]
+                            if not row_match.empty:
+                                selected_aid = row_match.iloc[0]["id"]
+                    elif sel_key != "— не выбрано —":
+                        selected_aid = opts[sel_key]
+
+                    # Показываем карточку
+                    if selected_aid:
+                        row = df_athletes_full[df_athletes_full["id"] == selected_aid].iloc[0]
                         c1, c2 = st.columns(2)
                         with c1:
                             st.markdown(f"**ФИО:** {row.get('full_name', '—')}")
@@ -517,8 +543,6 @@ else:
                                 today = pd.Timestamp.today()
                                 age = today.year - bd_dt.year - ((today.month, today.day) < (bd_dt.month, bd_dt.day))
                                 st.markdown(f"**Возраст:** {age} лет")
-                            else:
-                                st.markdown(f"**Возраст:** —")
                             st.markdown(f"**Игровой номер:** {int(row['jersey_number']) if pd.notna(row.get('jersey_number')) else '—'}")
                             st.markdown(f"**Телефон:** {row.get('phone', '—')}")
                             st.markdown(f"**Адрес:** {row.get('address', '—')}")
@@ -526,10 +550,11 @@ else:
                             st.markdown(f"**Группа крови:** {row.get('blood_type', '—')}")
                             st.markdown(f"**Резус:** {row.get('rh_factor', '—')}")
                             st.markdown(f"**Год начала занятий:** {int(row['handball_start_year']) if pd.notna(row.get('handball_start_year')) else '—'}")
-                        st.divider()
-                        st.markdown(f"**🚨 Экстренный контакт:** {row.get('emergency_contact', '—')} · {row.get('emergency_phone', '—')}")
+                            st.markdown(f"**🚨 Экстренный контакт:** {row.get('emergency_contact', '—')} · {row.get('emergency_phone', '—')}")
                         st.markdown(f"**⚠️ Аллергии:** {row.get('allergies') or '—'}")
                         st.markdown(f"**📝 Заметки врача:** {row.get('medical_notes') or '—'}")
+                    else:
+                        st.info("👆 Выберите спортсменку в таблице или в списке выше")
 
             with sa:
                 st.subheader("✍️ Добавить или отредактировать спортсменку")
@@ -572,8 +597,7 @@ else:
                                     emergency_phone = st.text_input("Телефон экстренного контакта", value=cur.get("emergency_phone", "") or "")
 
                                 st.markdown("### ⚠️ Аллергии и заметки")
-                                allergies = st.text_area("Аллергии", value=cur.get("allergies", "") or "", height=60,
-                                                          placeholder="Например: пенициллин, орехи")
+                                allergies = st.text_area("Аллергии", value=cur.get("allergies", "") or "", height=60)
                                 medical_notes = st.text_area("Заметки врача", value=cur.get("medical_notes", "") or "", height=80)
 
                                 st.markdown("### 📞 Telegram")
@@ -616,7 +640,6 @@ else:
                         with c2:
                             phone = st.text_input("Телефон", placeholder="+375 29 123-45-67")
                             address = st.text_input("Адрес")
-
                         st.markdown("### 🩸 Медицинские данные")
                         c3, c4 = st.columns(2)
                         with c3:
@@ -625,14 +648,11 @@ else:
                         with c4:
                             emergency_contact = st.text_input("Экстренный контакт (ФИО)")
                             emergency_phone = st.text_input("Телефон экстренного контакта")
-
                         st.markdown("### ⚠️ Аллергии и заметки")
                         allergies = st.text_area("Аллергии", height=60)
                         medical_notes = st.text_area("Заметки врача", height=80)
-
                         st.markdown("### 📞 Telegram")
                         telegram_id = st.text_input("Telegram ID", placeholder="470812340")
-
                         if st.form_submit_button("💾 Создать спортсменку", type="primary"):
                             if not full_name.strip():
                                 st.error("ФИО обязательно")
@@ -658,8 +678,7 @@ else:
                                     st.cache_data.clear()
                                 except Exception as e:
                                     st.error(f"Ошибка: {e}")
-
-    # --- ПРИЁМЫ ---
+    # --- ПРИЁМЫ (с кликом по строке) ---
     if tab_visits is not None:
         with tab_visits:
             st.header("🩺 Журнал приёмов врача")
@@ -671,7 +690,7 @@ else:
                 else:
                     st.caption(f"Всего приёмов: {len(df_visits)}")
                     filt_opts = ["Все"] + [f"№{int(r['jersey_number'])} — {r['full_name']}" for _, r in df_visits.drop_duplicates(subset=["athlete_id"]).iterrows() if pd.notna(r.get("jersey_number"))]
-                    filt = st.selectbox("Фильтр по спортсменке", filt_opts)
+                    filt = st.selectbox("Фильтр по спортсменке", filt_opts, key="visits_filter")
                     if filt != "Все":
                         jn = int(filt.split("№")[1].split(" ")[0])
                         df_visits_show = df_visits[df_visits["jersey_number"] == jn]
@@ -686,29 +705,133 @@ else:
                         "complaints": "Жалобы", "diagnosis": "Диагноз",
                         "prescriptions": "Назначения", "next_visit_date": "Следующий"
                     })
-                    st.dataframe(d, use_container_width=True, hide_index=True)
+
+                    event_v = st.dataframe(
+                        d,
+                        on_select="rerun",
+                        selection_mode="single-row",
+                        use_container_width=True,
+                        hide_index=True
+                    )
 
                     st.divider()
-                    st.subheader("👁️ Детальный просмотр")
-                    if not df_visits_show.empty:
-                        visit_labels = []
-                        for _, r in df_visits_show.iterrows():
-                            vd = pd.to_datetime(r["visit_date"]).strftime('%d.%m.%Y') if pd.notna(r.get("visit_date")) else "—"
-                            lbl = f"{vd} · №{int(r['jersey_number']) if pd.notna(r.get('jersey_number')) else '?'} · {r.get('full_name', '—')}"
-                            visit_labels.append((lbl, r["id"]))
-                        if visit_labels:
-                            sel_lbl = st.selectbox("Выберите приём", [l[0] for l in visit_labels])
-                            sel_id = next(i for l, i in visit_labels if l == sel_lbl)
-                            v = df_visits[df_visits["id"] == sel_id].iloc[0]
-                            st.markdown(f"**Дата:** {pd.to_datetime(v['visit_date']).strftime('%d.%m.%Y')}")
-                            st.markdown(f"**Спортсменка:** №{int(v['jersey_number']) if pd.notna(v.get('jersey_number')) else '?'} — {v.get('full_name')}")
-                            st.markdown(f"**Жалобы:** {v.get('complaints') or '—'}")
-                            st.markdown(f"**Осмотр:** {v.get('examination') or '—'}")
-                            st.markdown(f"**Диагноз:** {v.get('diagnosis') or v.get('diagnosis_text') or '—'}")
-                            st.markdown(f"**Назначения:** {v.get('prescriptions') or '—'}")
-                            st.markdown(f"**Рекомендации:** {v.get('recommendations') or '—'}")
-                            if pd.notna(v.get("next_visit_date")):
-                                st.markdown(f"**Следующий приём:** {pd.to_datetime(v['next_visit_date']).strftime('%d.%m.%Y')}")
+                    st.subheader("👁️ Детальная информация о приёме")
+
+                    visit_labels = []
+                    for _, r in df_visits_show.iterrows():
+                        vd = pd.to_datetime(r["visit_date"]).strftime('%d.%m.%Y') if pd.notna(r.get("visit_date")) else "—"
+                        lbl = f"{vd} · №{int(r['jersey_number']) if pd.notna(r.get('jersey_number')) else '?'} · {r.get('full_name', '—')}"
+                        visit_labels.append((lbl, r["id"]))
+
+                    sel_lbl = None
+                    if visit_labels:
+                        sel_lbl = st.selectbox(
+                            "Или выберите приём в списке",
+                            ["— не выбрано —"] + [l[0] for l in visit_labels],
+                            key="visit_view"
+                        )
+
+                    selected_visit_id = None
+                    if event_v.selection.rows:
+                        idx = event_v.selection.rows[0]
+                        if idx < len(df_visits_show):
+                            selected_visit_id = df_visits_show.iloc[idx]["id"]
+                    elif sel_lbl and sel_lbl != "— не выбрано —":
+                        selected_visit_id = next(i for l, i in visit_labels if l == sel_lbl)
+
+                    if selected_visit_id:
+                        v = df_visits[df_visits["id"] == selected_visit_id].iloc[0]
+                        st.markdown(f"**Дата:** {pd.to_datetime(v['visit_date']).strftime('%d.%m.%Y') if pd.notna(v.get('visit_date')) else '—'}")
+                        st.markdown(f"**Спортсменка:** №{int(v['jersey_number']) if pd.notna(v.get('jersey_number')) else '?'} — {v.get('full_name')}")
+                        st.markdown(f"**Жалобы:** {v.get('complaints') or '—'}")
+                        st.markdown(f"**Осмотр:** {v.get('examination') or '—'}")
+                        st.markdown(f"**Диагноз:** {v.get('diagnosis') or v.get('diagnosis_text') or '—'}")
+                        st.markdown(f"**Назначения:** {v.get('prescriptions') or '—'}")
+                        st.markdown(f"**Рекомендации:** {v.get('recommendations') or '—'}")
+                        if pd.notna(v.get("next_visit_date")):
+                            st.markdown(f"**Следующий приём:** {pd.to_datetime(v['next_visit_date']).strftime('%d.%m.%Y')}")
+
+                        col_a, col_b = st.columns([1, 1])
+                        with col_a:
+                            if st.button("✏️ Редактировать", key=f"edit_visit_{selected_visit_id}"):
+                                st.session_state["edit_visit_id"] = selected_visit_id
+                        with col_b:
+                            if st.button("🗑️ Удалить", key=f"del_visit_{selected_visit_id}"):
+                                try:
+                                    supabase.table("doctor_visits").delete().eq("id", selected_visit_id).execute()
+                                    st.success("✅ Приём удалён")
+                                    st.cache_data.clear()
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Ошибка: {e}")
+                    else:
+                        st.info("👆 Выберите приём в таблице или в списке выше")
+
+                    if "edit_visit_id" in st.session_state and st.session_state["edit_visit_id"]:
+                        edit_vid = st.session_state["edit_visit_id"]
+                        v_edit = df_visits[df_visits["id"] == edit_vid]
+                        if not v_edit.empty:
+                            cur_v = v_edit.iloc[0]
+                            st.divider()
+                            st.subheader(f"✏️ Редактирование приёма от {pd.to_datetime(cur_v['visit_date']).strftime('%d.%m.%Y')}")
+                            with st.form("form_edit_visit"):
+                                opts_v = athlete_options_dict()
+                                cur_aid = cur_v["athlete_id"]
+                                cur_label = None
+                                for lbl, aid in opts_v.items():
+                                    if aid == cur_aid:
+                                        cur_label = lbl
+                                        break
+                                cur_idx = list(opts_v.keys()).index(cur_label) if cur_label else 0
+                                sel_a = st.selectbox("Спортсменка *", list(opts_v.keys()), index=cur_idx)
+                                c1, c2 = st.columns(2)
+                                with c1:
+                                    vdate = st.date_input("Дата приёма *", value=pd.to_datetime(cur_v["visit_date"]).date(), format="DD.MM.YYYY")
+                                with c2:
+                                    nv = cur_v.get("next_visit_date")
+                                    nvdate = st.date_input("Дата следующего приёма", value=pd.to_datetime(nv).date() if pd.notna(nv) else None, format="DD.MM.YYYY")
+                                complaints = st.text_area("Жалобы", value=cur_v.get("complaints") or "", height=80)
+                                examination = st.text_area("Данные осмотра", value=cur_v.get("examination") or "", height=100)
+                                dopts = {}
+                                if not df_diagnoses.empty:
+                                    for _, row in df_diagnoses.iterrows():
+                                        lbl = f"{row['mkb_code']} — {row['name']}" if pd.notna(row['mkb_code']) else row['name']
+                                        dopts[lbl] = row['id']
+                                cur_did = cur_v.get("diagnosis_id")
+                                cur_dlbl = None
+                                for lbl, did in dopts.items():
+                                    if did == cur_did:
+                                        cur_dlbl = lbl
+                                        break
+                                d_list = ["— не указан —"] + list(dopts.keys())
+                                d_idx = d_list.index(cur_dlbl) if cur_dlbl else 0
+                                sel_d = st.selectbox("Диагноз (МКБ)", d_list, index=d_idx)
+                                diagnosis_text = st.text_input("Диагноз текстом", value=cur_v.get("diagnosis_text") or "")
+                                prescriptions = st.text_area("Назначения", value=cur_v.get("prescriptions") or "", height=80)
+                                recommendations = st.text_area("Рекомендации", value=cur_v.get("recommendations") or "", height=60)
+                                save = st.form_submit_button("💾 Сохранить", type="primary")
+                                if save:
+                                    try:
+                                        payload = {
+                                            "athlete_id": opts_v[sel_a],
+                                            "visit_date": vdate.isoformat(),
+                                            "complaints": complaints.strip() or None,
+                                            "examination": examination.strip() or None,
+                                            "prescriptions": prescriptions.strip() or None,
+                                            "recommendations": recommendations.strip() or None,
+                                            "next_visit_date": nvdate.isoformat() if nvdate else None
+                                        }
+                                        if sel_d != "— не указан —":
+                                            payload["diagnosis_id"] = dopts[sel_d]
+                                        if diagnosis_text.strip():
+                                            payload["diagnosis_text"] = diagnosis_text.strip()
+                                        supabase.table("doctor_visits").update(payload).eq("id", edit_vid).execute()
+                                        st.success("✅ Приём обновлён")
+                                        st.session_state["edit_visit_id"] = None
+                                        st.cache_data.clear()
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Ошибка: {e}")
 
             with sa:
                 st.subheader("✍️ Внести новый приём")
@@ -720,16 +843,16 @@ else:
                         vdate = st.date_input("Дата приёма *", value=date.today(), format="DD.MM.YYYY")
                     with c2:
                         nvdate = st.date_input("Дата следующего приёма", value=None, format="DD.MM.YYYY")
-                    complaints = st.text_area("Жалобы", height=80, placeholder="На что жалуется спортсменка")
-                    examination = st.text_area("Данные осмотра", height=100, placeholder="Объективные данные, измерения, результаты")
+                    complaints = st.text_area("Жалобы", height=80)
+                    examination = st.text_area("Данные осмотра", height=100)
                     dopts = {}
                     if not df_diagnoses.empty:
                         for _, row in df_diagnoses.iterrows():
                             lbl = f"{row['mkb_code']} — {row['name']}" if pd.notna(row['mkb_code']) else row['name']
                             dopts[lbl] = row['id']
                     sel_d = st.selectbox("Диагноз (МКБ)", ["— не указан —"] + list(dopts.keys()))
-                    diagnosis_text = st.text_input("Диагноз текстом (если нет в МКБ)")
-                    prescriptions = st.text_area("Назначения", height=80, placeholder="Лекарства, процедуры, режим")
+                    diagnosis_text = st.text_input("Диагноз текстом")
+                    prescriptions = st.text_area("Назначения", height=80)
                     recommendations = st.text_area("Рекомендации", height=60)
                     if st.form_submit_button("💾 Сохранить приём", type="primary"):
                         try:
@@ -752,19 +875,20 @@ else:
                         except Exception as e:
                             st.error(f"Ошибка: {e}")
 
-    # --- ОСМОТРЫ ---
+    # --- ОСМОТРЫ (с кликом по строке) ---
     if tab_exams is not None:
         with tab_exams:
             st.header("🏥 Медицинские осмотры")
             sv, sa = st.tabs(["📋 Просмотр", "✍️ Внести осмотр"])
+
             with sv:
                 st.subheader("⚠️ Просроченные")
                 if not df_overdue.empty:
                     st.error(f"Просрочено: {len(df_overdue)}")
-                    d = format_dates(df_overdue, ["Был должен"])
-                    st.dataframe(d, use_container_width=True, hide_index=True)
+                    st.dataframe(format_dates(df_overdue, ["Был должен"]), use_container_width=True, hide_index=True)
                 else:
                     st.success("✅ Всё в порядке")
+
                 st.divider()
                 st.subheader("📋 Все осмотры (последние 50)")
                 if not df_all_exams.empty:
@@ -776,9 +900,136 @@ else:
                         "exam_name": "Осмотр", "is_approved": "Допуск",
                         "next_exam_date": "Следующий", "restrictions": "Ограничения"
                     })
-                    st.dataframe(d, use_container_width=True, hide_index=True)
+
+                    event_e = st.dataframe(
+                        d,
+                        on_select="rerun",
+                        selection_mode="single-row",
+                        use_container_width=True,
+                        hide_index=True
+                    )
+
+                    st.divider()
+                    st.subheader("👁️ Детальная информация об осмотре")
+
+                    exam_labels = []
+                    for _, r in df_all_exams.head(50).iterrows():
+                        ed = pd.to_datetime(r["examination_date"]).strftime('%d.%m.%Y') if pd.notna(r.get("examination_date")) else "—"
+                        lbl = f"{ed} · №{int(r['jersey_number']) if pd.notna(r.get('jersey_number')) else '?'} · {r.get('exam_name', '—')}"
+                        exam_labels.append((lbl, r["id"]))
+
+                    sel_lbl = None
+                    if exam_labels:
+                        sel_lbl = st.selectbox(
+                            "Или выберите осмотр в списке",
+                            ["— не выбрано —"] + [l[0] for l in exam_labels],
+                            key="exam_view"
+                        )
+
+                    selected_exam_id = None
+                    if event_e.selection.rows:
+                        idx = event_e.selection.rows[0]
+                        if idx < len(df_all_exams.head(50)):
+                            selected_exam_id = df_all_exams.head(50).iloc[idx]["id"]
+                    elif sel_lbl and sel_lbl != "— не выбрано —":
+                        selected_exam_id = next(i for l, i in exam_labels if l == sel_lbl)
+
+                    if selected_exam_id:
+                        ex = df_all_exams[df_all_exams["id"] == selected_exam_id].iloc[0]
+                        st.markdown(f"**Дата:** {pd.to_datetime(ex['examination_date']).strftime('%d.%m.%Y') if pd.notna(ex.get('examination_date')) else '—'}")
+                        st.markdown(f"**Спортсменка:** №{int(ex['jersey_number']) if pd.notna(ex.get('jersey_number')) else '?'} — {ex.get('full_name')}")
+                        st.markdown(f"**Тип осмотра:** {ex.get('exam_name') or '—'}")
+                        st.markdown(f"**Заключение:** {ex.get('result_text') or '—'}")
+                        approved = ex.get("is_approved")
+                        st.markdown(f"**Допуск:** {'✅ Да' if approved else '❌ Нет' if approved is False else '—'}")
+                        st.markdown(f"**Ограничения:** {ex.get('restrictions') or '—'}")
+                        if pd.notna(ex.get("next_exam_date")):
+                            st.markdown(f"**Следующий:** {pd.to_datetime(ex['next_exam_date']).strftime('%d.%m.%Y')}")
+
+                        col_a, col_b = st.columns([1, 1])
+                        with col_a:
+                            if st.button("✏️ Редактировать", key=f"edit_exam_{selected_exam_id}"):
+                                st.session_state["edit_exam_id"] = selected_exam_id
+                        with col_b:
+                            if st.button("🗑️ Удалить", key=f"del_exam_{selected_exam_id}"):
+                                try:
+                                    supabase.table("examinations").delete().eq("id", selected_exam_id).execute()
+                                    st.success("✅ Осмотр удалён")
+                                    st.cache_data.clear()
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Ошибка: {e}")
+                    else:
+                        st.info("👆 Выберите осмотр в таблице или в списке выше")
+
+                    if "edit_exam_id" in st.session_state and st.session_state["edit_exam_id"]:
+                        edit_eid = st.session_state["edit_exam_id"]
+                        ex_edit = df_all_exams[df_all_exams["id"] == edit_eid]
+                        if not ex_edit.empty:
+                            cur_e = ex_edit.iloc[0]
+                            st.divider()
+                            st.subheader("✏️ Редактирование осмотра")
+                            with st.form("form_edit_exam"):
+                                opts_e = athlete_options_dict()
+                                cur_aid = cur_e["athlete_id"]
+                                cur_label = None
+                                for lbl, aid in opts_e.items():
+                                    if aid == cur_aid:
+                                        cur_label = lbl
+                                        break
+                                cur_idx = list(opts_e.keys()).index(cur_label) if cur_label else 0
+                                sel_a = st.selectbox("Спортсменка *", list(opts_e.keys()), index=cur_idx)
+                                topts = {}
+                                if not df_exam_templates.empty:
+                                    for _, row in df_exam_templates.iterrows():
+                                        topts[f"{row['name']} ({row['specialist_type']})"] = {
+                                            "id": row['id'], "validity": row['validity_days']
+                                        }
+                                cur_tid = cur_e.get("exam_template_id")
+                                cur_tlbl = None
+                                for lbl, t in topts.items():
+                                    if t["id"] == cur_tid:
+                                        cur_tlbl = lbl
+                                        break
+                                t_list = list(topts.keys())
+                                t_idx = t_list.index(cur_tlbl) if cur_tlbl else 0
+                                sel_t = st.selectbox("Тип осмотра *", t_list, index=t_idx)
+                                c1, c2 = st.columns(2)
+                                with c1:
+                                    ed = st.date_input("Дата осмотра *", value=pd.to_datetime(cur_e["examination_date"]).date(), format="DD.MM.YYYY")
+                                with c2:
+                                    nv = cur_e.get("next_exam_date")
+                                    ned = st.date_input("Следующий осмотр", value=pd.to_datetime(nv).date() if pd.notna(nv) else None, format="DD.MM.YYYY")
+                                rt = st.text_area("Заключение *", value=cur_e.get("result_text") or "", height=100)
+                                cur_ap = cur_e.get("is_approved")
+                                ap_idx = 0 if cur_ap else 1
+                                ap = st.radio("Допуск? *", [True, False], index=ap_idx,
+                                              format_func=lambda x: "✅ Да" if x else "❌ Нет", horizontal=True)
+                                res = st.text_input("Ограничения", value=cur_e.get("restrictions") or "")
+                                save = st.form_submit_button("💾 Сохранить", type="primary")
+                                if save:
+                                    if len(rt.strip()) < 3:
+                                        st.error("Заполните заключение")
+                                    else:
+                                        try:
+                                            supabase.table("examinations").update({
+                                                "athlete_id": opts_e[sel_a],
+                                                "exam_template_id": topts[sel_t]["id"],
+                                                "examination_date": ed.isoformat(),
+                                                "result_text": rt.strip(),
+                                                "is_approved": ap,
+                                                "restrictions": res.strip() if res else None,
+                                                "next_exam_date": ned.isoformat() if ned else None
+                                            }).eq("id", edit_eid).execute()
+                                            st.success("✅ Осмотр обновлён")
+                                            st.session_state["edit_exam_id"] = None
+                                            st.cache_data.clear()
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f"Ошибка: {e}")
                 else:
                     st.info("Осмотров пока нет.")
+
             with sa:
                 st.subheader("✍️ Внести новый осмотр")
                 with st.form("f_exam", clear_on_submit=True):
@@ -821,7 +1072,8 @@ else:
                             except Exception as e:
                                 st.error(f"Ошибка: {e}")
 
-    # --- ТРАВМЫ ---
+    # --- ТРАВМЫ / ЛЕКАРСТВА / ПРИВИВКИ / АНТРОПОМЕТРИЯ / ТЕСТЫ / ХРОНИКИ / АНАЛИЗЫ ---
+    # Пока оставляем как было (без клика по строке) — добавим в следующий раз
     if tab_injuries is not None:
         with tab_injuries:
             st.header("🩹 Травмы и заболевания")
@@ -884,7 +1136,6 @@ else:
                         except Exception as e:
                             st.error(f"Ошибка: {e}")
 
-    # --- ЛЕКАРСТВА ---
     if tab_meds is not None:
         with tab_meds:
             st.header("💊 Лекарства")
@@ -940,7 +1191,6 @@ else:
                         except Exception as e:
                             st.error(f"Ошибка: {e}")
 
-    # --- ПРИВИВКИ ---
     if tab_vaccines is not None:
         with tab_vaccines:
             st.header("💉 Прививки")
@@ -963,7 +1213,7 @@ else:
                 with st.form("f_vac", clear_on_submit=True):
                     opts = athlete_options_dict()
                     sel_a = st.selectbox("Спортсменка *", list(opts.keys()))
-                    vn = st.text_input("Название вакцины *", placeholder="АДС-М, Гепатит B, Грипп")
+                    vn = st.text_input("Название вакцины *")
                     c1, c2 = st.columns(2)
                     with c1: vd = st.date_input("Дата прививки *", value=date.today(), format="DD.MM.YYYY")
                     with c2: bd = st.date_input("Дата ревакцинации", value=None, format="DD.MM.YYYY")
@@ -985,7 +1235,6 @@ else:
                             except Exception as e:
                                 st.error(f"Ошибка: {e}")
 
-    # --- АНТРОПОМЕТРИЯ ---
     if tab_anthro is not None:
         with tab_anthro:
             st.header("📏 Антропометрия")
@@ -1038,7 +1287,6 @@ else:
                         except Exception as e:
                             st.error(f"Ошибка: {e}")
 
-    # --- ТЕСТЫ ---
     if tab_tests is not None:
         with tab_tests:
             st.header("🏃 Функциональные тесты")
@@ -1088,7 +1336,6 @@ else:
                         except Exception as e:
                             st.error(f"Ошибка: {e}")
 
-    # --- ХРОНИКИ ---
     if tab_chronic is not None:
         with tab_chronic:
             st.header("🩺 Хронические заболевания")
@@ -1111,7 +1358,7 @@ else:
                 with st.form("f_chr", clear_on_submit=True):
                     opts = athlete_options_dict()
                     sel_a = st.selectbox("Спортсменка *", list(opts.keys()))
-                    dn = st.text_input("Название *", placeholder="Бронхиальная астма")
+                    dn = st.text_input("Название *")
                     dd = st.date_input("Дата постановки *", value=date.today(), format="DD.MM.YYYY")
                     sev = st.selectbox("Тяжесть", ["Легкая", "Средняя", "Тяжелая"])
                     cm = st.text_area("Постоянные препараты", height=60)
@@ -1134,7 +1381,6 @@ else:
                             except Exception as e:
                                 st.error(f"Ошибка: {e}")
 
-    # --- АНАЛИЗЫ ---
     if tab_lab is not None:
         with tab_lab:
             st.header("🧪 Лабораторные анализы")
