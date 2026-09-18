@@ -73,7 +73,26 @@ def athlete_options_dict():
             label = f"№{j} — {row['full_name']}" if j else f"(без номера) {row['full_name']}"
             opts[label] = row['id']
     return opts
+@st.cache_data(ttl=300)
+def load_athlete_documents(athlete_id):
+    """Загружает список документов спортсменки."""
+    try:
+        r = supabase.table("documents") \
+            .select("id, document_type, file_name, file_path, upload_date, comment") \
+            .eq("athlete_id", athlete_id) \
+            .order("upload_date", desc=True) \
+            .execute()
+        return pd.DataFrame(r.data)
+    except Exception:
+        return pd.DataFrame()
 
+
+def get_public_file_url(file_path):
+    """Возвращает публичный URL файла из Storage."""
+    try:
+        return supabase.storage.from_("medical_documents").get_public_url(file_path)
+    except Exception:
+        return None
 def render_diagnosis_multiselect(label="Диагнозы (МКБ)", default_labels=None, key_suffix=""):
     """Multiselect диагнозов, сгруппированных по классам МКБ-10. Возвращает список id."""
     df_d = load_diagnoses()
@@ -1154,19 +1173,50 @@ else:
                         st.dataframe(d, use_container_width=True, hide_index=True)
 
                 # --- Анализы ---
+                   # --- Анализы ---
                 with mc_lab:
+                    # === Таблица лабораторных показателей ===
                     if not df_lab.empty and "athlete_id" in df_lab.columns:
                         my = df_lab[df_lab["athlete_id"] == mc_aid]
                     else:
                         my = pd.DataFrame()
+                    
                     if my.empty:
-                        st.info("Анализов нет.")
+                        st.info("Лабораторных анализов нет.")
                     else:
-                        cols = ["measurement_date", "biomarker_name", "value", "unit", "notes"]
+                        cols = ["measurement_date", "biomarker_name", "value", "unit"]
                         av = [c for c in cols if c in my.columns]
                         d = format_dates(my[av].copy(), ["measurement_date"])
-                        d = d.rename(columns={"measurement_date": "Дата", "biomarker_name": "Показатель", "value": "Значение", "unit": "Ед.", "notes": "Примечание"})
+                        d = d.rename(columns={
+                            "measurement_date": "Дата",
+                            "biomarker_name": "Показатель",
+                            "value": "Значение",
+                            "unit": "Ед."
+                        })
                         st.dataframe(d, use_container_width=True, hide_index=True)
+                    
+                    # === 📄 Прикреплённые документы (PDF) ===
+                    st.divider()
+                    st.subheader("📄 Прикреплённые документы")
+                    
+                    df_docs = load_athlete_documents(mc_aid)
+                    
+                    if df_docs.empty:
+                        st.info("Сканы не прикреплены.")
+                    else:
+                        for _, doc in df_docs.iterrows():
+                            col1, col2 = st.columns([3, 1])
+                            with col1:
+                                st.markdown(
+                                    f"**{doc['document_type']}** — "
+                                    f"_{doc['file_name']}_ ({doc.get('upload_date', '')})"
+                                )
+                            with col2:
+                                url = get_public_file_url(doc["file_path"])
+                                if url:
+                                    st.markdown(f"[📥 Открыть PDF]({url})")
+                                else:
+                                    st.write("—")
 
     # --- ПРИЁМЫ ---
     if tab_visits is not None:
