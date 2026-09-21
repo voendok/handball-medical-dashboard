@@ -1236,16 +1236,38 @@ else:
                     if my.empty:
                         st.info("Лабораторных анализов нет.")
                     else:
-                        cols = ["measurement_date", "biomarker_name", "value", "unit"]
+                        cols = ["measurement_date", "biomarker_name", "value", "unit", "reference_min", "reference_max"]
                         av = [c for c in cols if c in my.columns]
-                        d = format_dates(my[av].copy(), ["measurement_date"])
+                        d = my[av].copy()
+                        d = format_dates(d, ["measurement_date"])
                         d = d.rename(columns={
                             "measurement_date": "Дата",
                             "biomarker_name": "Показатель",
                             "value": "Значение",
-                            "unit": "Ед."
+                            "unit": "Ед.",
+                            "reference_min": "Мин.норма",
+                            "reference_max": "Макс.норма"
                         })
-                        st.dataframe(d, use_container_width=True, hide_index=True)
+                        
+                        # Сортируем по дате (свежие сверху)
+                        d = d.sort_values("Дата", ascending=False)
+                        
+                        # Применяем подсветку отклонений
+                        styled = d.style.apply(highlight_lab_results, axis=1)
+                        
+                        st.dataframe(
+                            styled,
+                            use_container_width=True,
+                            hide_index=True,
+                            column_config={
+                                "Мин.норма": st.column_config.NumberColumn(
+                                    "Мин.норма", format="%.2f", width="small"
+                                ),
+                                "Макс.норма": st.column_config.NumberColumn(
+                                    "Макс.норма", format="%.2f", width="small"
+                                )
+                            }
+                        )
                     
                     # === 📄 Прикреплённые документы (PDF) ===
                     st.divider()
