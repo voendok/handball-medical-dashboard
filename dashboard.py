@@ -2053,49 +2053,76 @@ else:
                             except Exception as e:
                                 st.error(f"Ошибка: {e}")
 
-    # --- АНАЛИЗЫ ---
-    if tab_lab is not None:
-        with tab_lab:
-            st.header("🧪 Лабораторные анализы")
-            sv, sa = st.tabs(["📋 Просмотр", "✍️ Внести результат"])
-            with sv:
-                if df_lab.empty:
-                    st.info("Анализов нет.")
-                else:
-                    cols = ["measurement_date", "jersey_number", "full_name", "biomarker_name", "value", "unit"]
-                    av = [c for c in cols if c in df_lab.columns]
-                    d = format_dates(df_lab[av].copy(), ["measurement_date"])
-                    d = d.rename(columns={
-                        "measurement_date": "Дата", "jersey_number": "№", "full_name": "ФИО",
-                        "biomarker_name": "Показатель", "value": "Значение", "unit": "Ед."
-                    })
-                    st.dataframe(d, use_container_width=True, hide_index=True)
-            with sa:
-                st.subheader("✍️ Внести результат анализа")
-                with st.form("f_lab", clear_on_submit=True):
-                    opts = athlete_options_dict()
-                    sel_a = st.selectbox("Спортсменка *", list(opts.keys()))
-                    bopts = {}
-                    if not df_biomarkers.empty:
-                        for _, row in df_biomarkers.iterrows():
-                            bopts[f"{row['name']} ({row['unit']})"] = row['id']
-                    sel_b = st.selectbox("Показатель *", list(bopts.keys()))
-                    md = st.date_input("Дата сдачи *", value=date.today(), format="DD.MM.YYYY")
-                    val = st.number_input("Значение *", value=0.0, step=0.01)
-                    nt = st.text_input("Примечание")
-                    if st.form_submit_button("💾 Сохранить", type="primary"):
-                        try:
-                            supabase.table("lab_results").insert({
-                                "athlete_id": opts[sel_a],
-                                "biomarker_id": bopts[sel_b],
-                                "measurement_date": md.isoformat(),
-                                "value": val,
-                                "notes": nt.strip() if nt else None
-                            }).execute()
-                            st.success(f"✅ Анализ сохранён: {sel_a}")
-                            st.cache_data.clear()
-                        except Exception as e:
-                            st.error(f"Ошибка: {e}")
+    # --- Анализы ---
+                with mc_lab:
+                    # === Таблица лабораторных показателей ===
+                    if not df_lab.empty and "athlete_id" in df_lab.columns:
+                        my = df_lab[df_lab["athlete_id"] == mc_aid]
+                    else:
+                        my = pd.DataFrame()
+
+                    if my.empty:
+                        st.info("Лабораторных анализов нет.")
+                    else:
+                        cols = ["measurement_date", "biomarker_name", "value", "unit", "reference_min", "reference_max"]
+                        av = [c for c in cols if c in my.columns]
+                        d = my[av].copy()
+                        d = format_dates(d, ["measurement_date"])
+                        d = d.rename(columns={
+                            "measurement_date": "Дата",
+                            "biomarker_name": "Показатель",
+                            "value": "Значение",
+                            "unit": "Ед.",
+                            "reference_min": "Мин.норма",
+                            "reference_max": "Макс.норма"
+                        })
+
+                        # Округляем числовые колонки до 2 знаков
+                        for col in ["Значение", "Мин.норма", "Макс.норма"]:
+                            if col in d.columns:
+                                d[col] = pd.to_numeric(d[col], errors='coerce').round(2)
+
+                        # Сортируем по дате (свежие сверху)
+                        d = d.sort_values("Дата", ascending=False)
+
+                        # Формат + подсветка
+                        styled = d.style \
+                            .format({
+                                "Значение": "{:.2f}",
+                                "Мин.норма": "{:.2f}",
+                                "Макс.норма": "{:.2f}"
+                            }, na_rep="—") \
+                            .apply(highlight_lab_results, axis=1)
+
+                        st.dataframe(
+                            styled,
+                            use_container_width=True,
+                            hide_index=True,
+                            height=600
+                        )
+
+                    # === 📄 Прикреплённые документы (PDF) ===
+                    st.divider()
+                    st.subheader("📄 Прикреплённые документы")
+
+                    df_docs = load_athlete_documents(mc_aid)
+
+                    if df_docs.empty:
+                        st.info("Сканы не прикреплены.")
+                    else:
+                        for _, doc in df_docs.iterrows():
+                            col1, col2 = st.columns([3, 1])
+                            with col1:
+                                st.markdown(
+                                    f"**{doc['document_type']}** — "
+                                    f"_{doc['file_name']}_ ({doc.get('upload_date', '')})"
+                                )
+                            with col2:
+                                url = get_public_file_url(doc["file_path"])
+                                if url:
+                                    st.markdown(f"[📥 Открыть PDF]({url})")
+                                else:
+                                    st.write("—")
 
 # ============ ФУТЕР ============
 st.divider()
