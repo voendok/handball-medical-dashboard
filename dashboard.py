@@ -1247,7 +1247,13 @@ else:
                         d = d.sort_values("Дата", ascending=False)
                         
                         # Применяем подсветку отклонений
-                        styled = d.style.apply(highlight_lab_results, axis=1)
+                        styled = d.style \
+                            .format({
+                                "Значение": "{:.2f}",
+                                "Мин.норма": "{:.2f}",
+                                "Макс.норма": "{:.2f}"
+                            }) \
+                            .apply(highlight_lab_results, axis=1) = d.style.apply(highlight_lab_results, axis=1)
                         
                         st.dataframe(
                             styled,
