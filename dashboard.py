@@ -355,7 +355,7 @@ def load_chronic_diseases():
 @st.cache_data(ttl=60)
 def load_lab_results():
     r = supabase.table("lab_results").select(
-        "*, athletes(full_name, jersey_number), dict_biomarkers(name, unit)"
+        "*, athletes(full_name, jersey_number), dict_biomarkers(name, unit, reference_min, reference_max)"
     ).order("measurement_date", desc=True).execute()
     df = pd.DataFrame(r.data)
     if not df.empty:
@@ -363,9 +363,61 @@ def load_lab_results():
         df["jersey_number"] = df["athletes"].apply(lambda x: x["jersey_number"] if x else None)
         df["biomarker_name"] = df["dict_biomarkers"].apply(lambda x: x["name"] if x else None)
         df["unit"] = df["dict_biomarkers"].apply(lambda x: x["unit"] if x else None)
+        df["reference_min"] = df["dict_biomarkers"].apply(lambda x: x.get("reference_min") if x else None)
+        df["reference_max"] = df["dict_biomarkers"].apply(lambda x: x.get("reference_max") if x else None)
         df = df.drop(columns=["athletes", "dict_biomarkers"])
     return df
-
+def highlight_lab_results(row):
+    """
+    Возвращает стили для строки таблицы анализов:
+    - синий шрифт, если значение ниже reference_min
+    - красный шрифт, если значение выше reference_max
+    """
+    styles = [""] * len(row)
+    
+    try:
+        # Находим индексы колонок "Значение", "reference_min", "reference_max"
+        val_idx = row.index.get_loc("Значение") if "Значение" in row.index else None
+        min_idx = row.index.get_loc("reference_min") if "reference_min" in row.index else None
+        max_idx = row.index.get_loc("reference_max") if "reference_max" in row.index else None
+        
+        if val_idx is None or min_idx is None or max_idx is None:
+            return styles
+        
+        value = row["Значение"]
+        ref_min = row["reference_min"]
+        ref_max = row["reference_max"]
+        
+        # Пропускаем, если значение пустое
+        if pd.isna(value):
+            return styles
+        
+        # Приводим к числу
+        try:
+            value = float(value)
+        except (ValueError, TypeError):
+            return styles
+        
+        # Подсветка
+        if pd.notna(ref_min):
+            try:
+                if value < float(ref_min):
+                    styles[val_idx] = "color: #0066cc; font-weight: bold;"  # синий
+                    return styles
+            except (ValueError, TypeError):
+                pass
+        
+        if pd.notna(ref_max):
+            try:
+                if value > float(ref_max):
+                    styles[val_idx] = "color: #cc0000; font-weight: bold;"  # красный
+                    return styles
+            except (ValueError, TypeError):
+                pass
+    except Exception:
+        pass
+    
+    return styles
 @st.cache_data(ttl=60)
 def load_doctor_visits():
     r = supabase.table("doctor_visits").select(
@@ -1184,16 +1236,38 @@ else:
                     if my.empty:
                         st.info("Лабораторных анализов нет.")
                     else:
-                        cols = ["measurement_date", "biomarker_name", "value", "unit"]
+                        cols = ["measurement_date", "biomarker_name", "value", "unit", "reference_min", "reference_max"]
                         av = [c for c in cols if c in my.columns]
-                        d = format_dates(my[av].copy(), ["measurement_date"])
+                        d = my[av].copy()
+                        d = format_dates(d, ["measurement_date"])
                         d = d.rename(columns={
                             "measurement_date": "Дата",
                             "biomarker_name": "Показатель",
                             "value": "Значение",
-                            "unit": "Ед."
+                            "unit": "Ед.",
+                            "reference_min": "Мин.норма",
+                            "reference_max": "Макс.норма"
                         })
-                        st.dataframe(d, use_container_width=True, hide_index=True)
+                        
+                        # Сортируем по дате (свежие сверху)
+                        d = d.sort_values("Дата", ascending=False)
+                        
+                        # Применяем подсветку отклонений
+                        styled = d.style.apply(highlight_lab_results, axis=1)
+                        
+                        st.dataframe(
+                            styled,
+                            use_container_width=True,
+                            hide_index=True,
+                            column_config={
+                                "Мин.норма": st.column_config.NumberColumn(
+                                    "Мин.норма", format="%.2f", width="small"
+                                ),
+                                "Макс.норма": st.column_config.NumberColumn(
+                                    "Макс.норма", format="%.2f", width="small"
+                                )
+                            }
+                        )
                     
                     # === 📄 Прикреплённые документы (PDF) ===
                     st.divider()
