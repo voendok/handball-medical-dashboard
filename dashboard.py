@@ -368,54 +368,49 @@ def load_lab_results():
         df = df.drop(columns=["athletes", "dict_biomarkers"])
     return df
 def highlight_lab_results(row):
-    """
-    Возвращает стили для строки таблицы анализов:
-    - синий шрифт, если значение ниже reference_min
-    - красный шрифт, если значение выше reference_max
-    """
+    """Подсвечивает значение: синий — ниже нормы, красный — выше нормы."""
     styles = [""] * len(row)
     
     try:
-        # Находим индексы колонок "Значение", "reference_min", "reference_max"
-        val_idx = row.index.get_loc("Значение") if "Значение" in row.index else None
-        min_idx = row.index.get_loc("reference_min") if "reference_min" in row.index else None
-        max_idx = row.index.get_loc("reference_max") if "reference_max" in row.index else None
-        
-        if val_idx is None or min_idx is None or max_idx is None:
+        # Колонки после rename — "Значение", "Мин.норма", "Макс.норма"
+        if "Значение" not in row.index:
             return styles
         
-        value = row["Значение"]
-        ref_min = row["reference_min"]
-        ref_max = row["reference_max"]
+        val_idx = row.index.get_loc("Значение")
         
-        # Пропускаем, если значение пустое
-        if pd.isna(value):
+        raw_value = row["Значение"]
+        
+        # Если значение пустое — ничего не делаем
+        if pd.isna(raw_value):
             return styles
         
-        # Приводим к числу
+        # Приводим к float (универсально)
         try:
-            value = float(value)
+            value = float(str(raw_value).replace(",", "."))
         except (ValueError, TypeError):
             return styles
         
-        # Подсветка
-        if pd.notna(ref_min):
+        # Проверка на минимум
+        if "Мин.норма" in row.index and pd.notna(row["Мин.норма"]):
             try:
-                if value < float(ref_min):
-                    styles[val_idx] = "color: #0066cc; font-weight: bold;"  # синий
+                ref_min = float(str(row["Мин.норма"]).replace(",", "."))
+                if value < ref_min:
+                    styles[val_idx] = "color: #0066cc; font-weight: bold;"
                     return styles
             except (ValueError, TypeError):
                 pass
         
-        if pd.notna(ref_max):
+        # Проверка на максимум
+        if "Макс.норма" in row.index and pd.notna(row["Макс.норма"]):
             try:
-                if value > float(ref_max):
-                    styles[val_idx] = "color: #cc0000; font-weight: bold;"  # красный
+                ref_max = float(str(row["Макс.норма"]).replace(",", "."))
+                if value > ref_max:
+                    styles[val_idx] = "color: #cc0000; font-weight: bold;"
                     return styles
             except (ValueError, TypeError):
                 pass
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"DEBUG highlight error: {e}")
     
     return styles
 @st.cache_data(ttl=60)
