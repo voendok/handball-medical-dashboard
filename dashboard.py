@@ -2101,29 +2101,6 @@ else:
                             height=600
                         )
 
-                    # === 📄 Прикреплённые документы (PDF) ===
-                    st.divider()
-                    st.subheader("📄 Прикреплённые документы")
-
-                    df_docs = load_athlete_documents(mc_aid)
-
-                    if df_docs.empty:
-                        st.info("Сканы не прикреплены.")
-                    else:
-                        for _, doc in df_docs.iterrows():
-                            col1, col2 = st.columns([3, 1])
-                            with col1:
-                                st.markdown(
-                                    f"**{doc['document_type']}** — "
-                                    f"_{doc['file_name']}_ ({doc.get('upload_date', '')})"
-                                )
-                            with col2:
-                                url = get_public_file_url(doc["file_path"])
-                                if url:
-                                    st.markdown(f"[📥 Открыть PDF]({url})")
-                                else:
-                                    st.write("—")
-
 # ============ ФУТЕР ============
 st.divider()
 c1, c2 = st.columns([4, 1])
