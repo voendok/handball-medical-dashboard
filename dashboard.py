@@ -1242,6 +1242,10 @@ else:
                             "reference_min": "Мин.норма",
                             "reference_max": "Макс.норма"
                         })
+                        # Округляем числовые колонки до 2 знаков
+                        for col in ["Значение", "Мин.норма", "Макс.норма"]:
+                            if col in d.columns:
+                                d[col] = pd.to_numeric(d[col], errors='coerce').round(2)
                         
                         # Сортируем по дате (свежие сверху)
                         d = d.sort_values("Дата", ascending=False)
@@ -2053,6 +2057,7 @@ else:
                             except Exception as e:
                                 st.error(f"Ошибка: {e}")
 
+   
 # ============ ФУТЕР ============
 st.divider()
 c1, c2 = st.columns([4, 1])
