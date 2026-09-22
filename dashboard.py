@@ -2053,54 +2053,6 @@ else:
                             except Exception as e:
                                 st.error(f"Ошибка: {e}")
 
-    # --- Анализы ---
-                with mc_lab:
-                    # === Таблица лабораторных показателей ===
-                    if not df_lab.empty and "athlete_id" in df_lab.columns:
-                        my = df_lab[df_lab["athlete_id"] == mc_aid]
-                    else:
-                        my = pd.DataFrame()
-
-                    if my.empty:
-                        st.info("Лабораторных анализов нет.")
-                    else:
-                        cols = ["measurement_date", "biomarker_name", "value", "unit", "reference_min", "reference_max"]
-                        av = [c for c in cols if c in my.columns]
-                        d = my[av].copy()
-                        d = format_dates(d, ["measurement_date"])
-                        d = d.rename(columns={
-                            "measurement_date": "Дата",
-                            "biomarker_name": "Показатель",
-                            "value": "Значение",
-                            "unit": "Ед.",
-                            "reference_min": "Мин.норма",
-                            "reference_max": "Макс.норма"
-                        })
-
-                        # Округляем числовые колонки до 2 знаков
-                        for col in ["Значение", "Мин.норма", "Макс.норма"]:
-                            if col in d.columns:
-                                d[col] = pd.to_numeric(d[col], errors='coerce').round(2)
-
-                        # Сортируем по дате (свежие сверху)
-                        d = d.sort_values("Дата", ascending=False)
-
-                        # Формат + подсветка
-                        styled = d.style \
-                            .format({
-                                "Значение": "{:.2f}",
-                                "Мин.норма": "{:.2f}",
-                                "Макс.норма": "{:.2f}"
-                            }, na_rep="—") \
-                            .apply(highlight_lab_results, axis=1)
-
-                        st.dataframe(
-                            styled,
-                            use_container_width=True,
-                            hide_index=True,
-                            height=600
-                        )
-
 # ============ ФУТЕР ============
 st.divider()
 c1, c2 = st.columns([4, 1])
