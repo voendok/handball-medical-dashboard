@@ -1219,14 +1219,14 @@ else:
                         d = d.rename(columns={"diagnosis_date": "Дата", "disease_name": "Заболевание", "severity": "Тяжесть", "current_medication": "Препараты", "clinical_recommendations": "Рекомендации"})
                         st.dataframe(d, use_container_width=True, hide_index=True)
 
-                # --- Анализы --- 
+                # --- Анализы ---
                 with mc_lab:
                     # === Таблица лабораторных показателей ===
                     if not df_lab.empty and "athlete_id" in df_lab.columns:
                         my = df_lab[df_lab["athlete_id"] == mc_aid]
                     else:
                         my = pd.DataFrame()
-                    
+
                     if my.empty:
                         st.info("Лабораторных анализов нет.")
                     else:
@@ -1242,29 +1242,29 @@ else:
                             "reference_min": "Мин.норма",
                             "reference_max": "Макс.норма"
                         })
+
                         # Округляем числовые колонки до 2 знаков
                         for col in ["Значение", "Мин.норма", "Макс.норма"]:
                             if col in d.columns:
                                 d[col] = pd.to_numeric(d[col], errors='coerce').round(2)
-                        
+
                         # Сортируем по дате (свежие сверху)
                         d = d.sort_values("Дата", ascending=False)
-                        
-                        # Применяем подсветку отклонений
-                        styled = d.style.apply(highlight_lab_results, axis=1)
-                        
+
+                        # Формат + подсветка
+                        styled = d.style \
+                            .format({
+                                "Значение": "{:.2f}",
+                                "Мин.норма": "{:.2f}",
+                                "Макс.норма": "{:.2f}"
+                            }, na_rep="—") \
+                            .apply(highlight_lab_results, axis=1)
+
                         st.dataframe(
                             styled,
                             use_container_width=True,
                             hide_index=True,
-                            column_config={
-                                "Мин.норма": st.column_config.NumberColumn(
-                                    "Мин.норма", format="%.2f", width="small"
-                                ),
-                                "Макс.норма": st.column_config.NumberColumn(
-                                    "Макс.норма", format="%.2f", width="small"
-                                )
-                            }
+                            height=600
                         )
                     
                     # === 📄 Прикреплённые документы (PDF) ===
