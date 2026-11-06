@@ -85,7 +85,9 @@ def load_athlete_documents(athlete_id):
         return pd.DataFrame(r.data)
     except Exception:
         return pd.DataFrame()
-
+def load_positions():
+    r = supabase.table("dict_positions").select("id, name").order("name").execute()
+    return pd.DataFrame(r.data)
 
 def get_public_file_url(file_path):
     """Возвращает публичный URL файла из Storage."""
@@ -463,6 +465,7 @@ df_exam_templates = load_exam_templates()
 df_test_types = load_test_types()
 df_biomarkers = load_biomarkers()
 df_staff = load_staff()
+df_positions = load_positions()
 
 # ============ ЗАГОЛОВОК ============
 st.title("🏐 Медицинский дашборд команды")
@@ -584,6 +587,8 @@ else:
                     new_start_year = st.number_input("Год начала занятий", min_value=1950, max_value=date.today().year, value=date.today().year)
                 with c2:
                     new_phone = st.text_input("Телефон", placeholder="+375 29 123-45-67")
+                    pos_opts = {row['name']: row['id'] for _, row in df_positions.iterrows()}
+                    new_position = st.selectbox("Амплуа", ["— не выбрано —"] + list(pos_opts.keys()))
                     new_blood_type = st.selectbox("Группа крови", ["— не указана —", "1", "2", "3", "4"])
                     new_rh = st.selectbox("Резус-фактор", ["— не указан —", "+", "−"])
                     new_telegram = st.text_input("Telegram ID (если есть)")
@@ -602,6 +607,7 @@ else:
                                 "jersey_number": int(new_jersey) if new_jersey > 0 else None,
                                 "handball_start_year": int(new_start_year),
                                 "phone": new_phone.strip() or None,
+                                "position_id": pos_opts[new_position] if new_position != "— не выбрано —" else None,
                                 "blood_type": new_blood_type if new_blood_type != "— не указана —" else None,
                                 "rh_factor": new_rh if new_rh != "— не указан —" else None,
                                 "telegram_user_id": new_telegram.strip() or None,
@@ -655,6 +661,14 @@ else:
                             new_bd = st.date_input("Дата рождения", value=pd.to_datetime(row.get("birth_date")).date() if pd.notna(row.get("birth_date")) else date.today())
                             new_jersey = st.number_input("Игровой номер", min_value=0, max_value=999, value=int(row.get("jersey_number")) if pd.notna(row.get("jersey_number")) else 0)
                         with c_e2:
+                            pos_opts = {r['name']: r['id'] for _, r in df_positions.iterrows()}
+                            cur_pos_name = "— не выбрано —"
+                            if pd.notna(row.get("position_id")):
+                                for name, pid in pos_opts.items():
+                                    if pid == row["position_id"]:
+                                        cur_pos_name = name
+                                        break
+                            new_pos = st.selectbox("Амплуа", ["— не выбрано —"] + list(pos_opts.keys()), index=list(pos_opts.keys()).index(cur_pos_name) + 1 if cur_pos_name in pos_opts else 0)
                             new_blood = st.text_input("Группа крови", value=row.get("blood_type", "") or "")
                             new_rh = st.selectbox("Резус-фактор", ["— не указан —", "+", "−"], index=0 if pd.isna(row.get("rh_factor")) else (1 if row.get("rh_factor") == "+" else 2))
                             new_phone = st.text_input("Телефон", value=row.get("phone", "") or "")
@@ -668,6 +682,7 @@ else:
                                     "full_name": new_name.strip(),
                                     "birth_date": new_bd.isoformat(),
                                     "jersey_number": int(new_jersey) if new_jersey > 0 else None,
+                                    "position_id": pos_opts[new_pos] if new_pos != "— не выбрано —" else None,
                                     "blood_type": new_blood.strip() or None,
                                     "rh_factor": new_rh if new_rh != "— не указан —" else None,
                                     "phone": new_phone.strip() or None,
