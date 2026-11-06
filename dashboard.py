@@ -570,7 +570,6 @@ else:
     with tab_card:
         st.header("👤 Карточка спортсменки")
         
-        # Выбор спортсменки
         opts = athlete_options_dict()
         if not opts:
             st.info("Нет активных спортсменок.")
@@ -579,7 +578,6 @@ else:
             selected_aid = opts[sel_key]
             
             if selected_aid:
-                # Загружаем данные по выбранной спортсменке
                 row = df_athletes_full[df_athletes_full["id"] == selected_aid].iloc[0]
                 
                 # --- ШАПКА КАРТОЧКИ ---
@@ -589,15 +587,18 @@ else:
                         st.markdown(f"**ФИО:** {row.get('full_name', '—')}")
                         bd = pd.to_datetime(row.get('birth_date')).strftime('%d.%m.%Y') if pd.notna(row.get('birth_date')) else '—'
                         st.markdown(f"**Дата рождения:** {bd}")
-                    with c2:
                         st.markdown(f"**Игровой номер:** {int(row['jersey_number']) if pd.notna(row.get('jersey_number')) else '—'}")
+                    with c2:
                         bt = row.get('blood_type')
                         rh = row.get('rh_factor')
                         blood_str = f"{bt} {rh}" if pd.notna(bt) and pd.notna(rh) else "—"
                         st.markdown(f"**Группа крови:** {blood_str}")
+                        st.markdown(f"**Год начала:** {int(row['handball_start_year']) if pd.notna(row.get('handball_start_year')) else '—'}")
+                        st.markdown(f"**Телефон:** {row.get('phone') or '—'}")
                     with c3:
                         st.markdown(f"**Аллергии:** {row.get('allergies') or '—'}")
-                        st.markdown(f"**Экстренный контакт:** {row.get('emergency_contact') or '—'}")
+                        st.markdown(f"**Экстренный контакт:** {row.get('emergency_contact') or '—'} {row.get('emergency_phone') or ''}")
+                        st.markdown(f"**Заметки:** {row.get('medical_notes') or '—'}")
                 
                 st.divider()
 
@@ -609,30 +610,37 @@ else:
                 ])
                 (c_mon, c_visits, c_labs, c_inj, c_exams, c_anthro, c_meds, c_vacc) = c_tabs
 
-                # 1. МОНИТОРИНГ (Пульс, сон и т.д.)
+                # 1. МОНИТОРИНГ
                 with c_mon:
                     st.subheader("📈 Динамика за последние 30 дней")
-                    # Загружаем логи для конкретной спортсменки
                     my_logs = df_logs[df_logs["athlete_id"] == selected_aid] if not df_logs.empty else pd.DataFrame()
                     
                     if my_logs.empty:
                         st.info("Нет данных за 30 дней.")
                     else:
                         dfc = my_logs[["log_date", "morning_hr", "ortho_hr_after", "sleep_hours", "appetite_score"]].sort_values("log_date").set_index("log_date")
+                        
+                        st.markdown("**Пульс (лежа / стоя)**")
                         st.line_chart(dfc[["morning_hr", "ortho_hr_after"]], use_container_width=True)
+                        
+                        st.markdown("**Сон и Аппетит (от 1 до 5)**")
                         st.bar_chart(dfc[["sleep_hours", "appetite_score"]], use_container_width=True)
 
                 # 2. ПРИЁМЫ
                 with c_visits:
                     st.subheader("🩺 Журнал приёмов")
                     my_v = df_visits[df_visits["athlete_id"] == selected_aid] if not df_visits.empty else pd.DataFrame()
+                    
                     if my_v.empty:
                         st.info("Приёмов нет.")
                     else:
-                        st.dataframe(my_v[["visit_date", "complaints", "diagnosis", "prescriptions"]], use_container_width=True, hide_index=True)
+                        d = my_v[["visit_date", "complaints", "diagnosis", "prescriptions", "recommendations"]].copy()
+                        d = d.rename(columns={"visit_date": "Дата", "complaints": "Жалобы", "diagnosis": "Диагноз", "prescriptions": "Назначения", "recommendations": "Рекомендации"})
+                        d["Дата"] = pd.to_datetime(d["Дата"]).dt.strftime('%d.%m.%Y')
+                        d = d.fillna("—")
+                        st.dataframe(d, use_container_width=True, hide_index=True)
                     
-                    # Форма добавления (упрощенно)
-                    with st.expander("➕ Добавить приём"):
+                    with st.expander("➕ Добавить новый приём"):
                         st.info("Форма добавления приёма будет здесь.")
 
                 # 3. АНАЛИЗЫ
@@ -642,7 +650,10 @@ else:
                     if my_l.empty:
                         st.info("Анализов нет.")
                     else:
-                        st.dataframe(my_l[["measurement_date", "biomarker_name", "value", "unit"]], use_container_width=True, hide_index=True)
+                        d = my_l[["measurement_date", "biomarker_name", "value", "unit", "reference_min", "reference_max"]].copy()
+                        d = d.rename(columns={"measurement_date": "Дата", "biomarker_name": "Показатель", "value": "Значение", "unit": "Ед.", "reference_min": "Мин.норма", "reference_max": "Макс.норма"})
+                        d["Дата"] = pd.to_datetime(d["Дата"]).dt.strftime('%d.%m.%Y')
+                        st.dataframe(d, use_container_width=True, hide_index=True)
 
                 # 4. ТРАВМЫ
                 with c_inj:
@@ -651,7 +662,14 @@ else:
                     if my_i.empty:
                         st.info("Травм нет.")
                     else:
-                        st.dataframe(my_i[["incident_date", "diagnosis", "body_part", "severity", "days_lost"]], use_container_width=True, hide_index=True)
+                        d = my_i[["incident_date", "diagnosis", "body_part", "side", "severity", "days_lost"]].copy()
+                        d = d.rename(columns={"incident_date": "Дата", "diagnosis": "Диагноз", "body_part": "Часть тела", "side": "Сторона", "severity": "Тяжесть", "days_lost": "Пропущено"})
+                        d["Дата"] = pd.to_datetime(d["Дата"]).dt.strftime('%d.%m.%Y')
+                        d = d.fillna("—")
+                        st.dataframe(d, use_container_width=True, hide_index=True)
+                    
+                    with st.expander("➕ Добавить травму"):
+                        st.info("Форма добавления травмы будет здесь.")
 
                 # 5. ОСМОТРЫ
                 with c_exams:
@@ -660,7 +678,15 @@ else:
                     if my_e.empty:
                         st.info("Осмотров нет.")
                     else:
-                        st.dataframe(my_e[["examination_date", "exam_name", "is_approved", "next_exam_date"]], use_container_width=True, hide_index=True)
+                        d = my_e[["examination_date", "exam_name", "is_approved", "next_exam_date", "restrictions"]].copy()
+                        d = d.rename(columns={"examination_date": "Дата", "exam_name": "Осмотр", "is_approved": "Допуск", "next_exam_date": "Следующий", "restrictions": "Ограничения"})
+                        d["Дата"] = pd.to_datetime(d["Дата"]).dt.strftime('%d.%m.%Y')
+                        d["Следующий"] = pd.to_datetime(d["Следующий"]).dt.strftime('%d.%m.%Y')
+                        d = d.fillna("—")
+                        st.dataframe(d, use_container_width=True, hide_index=True)
+                        
+                    with st.expander("➕ Добавить осмотр"):
+                        st.info("Форма добавления осмотра будет здесь.")
 
                 # 6. АНТРОПОМЕТРИЯ
                 with c_anthro:
@@ -669,7 +695,10 @@ else:
                     if my_a.empty:
                         st.info("Измерений нет.")
                     else:
-                        st.dataframe(my_a[["measurement_date", "height", "weight", "bmi", "body_fat"]], use_container_width=True, hide_index=True)
+                        d = my_a[["measurement_date", "height", "weight", "bmi", "body_fat", "muscle_mass"]].copy()
+                        d = d.rename(columns={"measurement_date": "Дата", "height": "Рост", "weight": "Вес", "bmi": "ИМТ", "body_fat": "% жира", "muscle_mass": "Мышцы"})
+                        d["Дата"] = pd.to_datetime(d["Дата"]).dt.strftime('%d.%m.%Y')
+                        st.dataframe(d, use_container_width=True, hide_index=True)
 
                 # 7. ЛЕКАРСТВА
                 with c_meds:
@@ -678,7 +707,12 @@ else:
                     if my_m.empty:
                         st.info("Назначений нет.")
                     else:
-                        st.dataframe(my_m[["medicine_name", "dosage", "course_start", "course_end", "wada_status"]], use_container_width=True, hide_index=True)
+                        d = my_m[["medicine_name", "dosage", "frequency", "course_start", "course_end", "wada_status"]].copy()
+                        d = d.rename(columns={"medicine_name": "Препарат", "dosage": "Дозировка", "frequency": "Кратность", "course_start": "С", "course_end": "По", "wada_status": "WADA"})
+                        d["С"] = pd.to_datetime(d["С"]).dt.strftime('%d.%m.%Y')
+                        d["По"] = pd.to_datetime(d["По"]).dt.strftime('%d.%m.%Y')
+                        d = d.fillna("—")
+                        st.dataframe(d, use_container_width=True, hide_index=True)
 
                 # 8. ПРИВИВКИ
                 with c_vacc:
@@ -687,7 +721,11 @@ else:
                     if my_vac.empty:
                         st.info("Прививок нет.")
                     else:
-                        st.dataframe(my_vac[["vaccination_date", "vaccine_name", "booster_date"]], use_container_width=True, hide_index=True)
+                        d = my_vac[["vaccination_date", "vaccine_name", "booster_date", "batch_number"]].copy()
+                        d = d.rename(columns={"vaccination_date": "Дата", "vaccine_name": "Вакцина", "booster_date": "Ревакцинация", "batch_number": "Серия"})
+                        d["Дата"] = pd.to_datetime(d["Дата"]).dt.strftime('%d.%m.%Y')
+                        d = d.fillna("—")
+                        st.dataframe(d, use_container_width=True, hide_index=True)
 
 
     # ------------------------------------------
