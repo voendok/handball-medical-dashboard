@@ -753,8 +753,15 @@ else:
         st.subheader("🚦 Статус спортсменок")
         
         if not df_dashboard.empty:
-            # Фильтр (добавили "⚪ Только без данных")
-            filt = st.selectbox("Фильтр", ["Все", "🔴 Только красные", "🟡 Только жёлтые", "🟢 Только зелёные", "⚪ Только без данных"])
+            # Меняем порядок: по умолчанию показываем только тех, у кого есть данные
+            filt = st.selectbox("Фильтр", [
+                "Только с данными (🟢🟡🔴)", 
+                "Все", 
+                "🔴 Только красные", 
+                "🟡 Только жёлтые", 
+                "🟢 Только зелёные", 
+                "⚪ Только без данных"
+            ])
             
             if filt == "🔴 Только красные":
                 df_d = df_dashboard[df_dashboard["status_color"] == "red"]
@@ -764,6 +771,9 @@ else:
                 df_d = df_dashboard[df_dashboard["status_color"] == "green"]
             elif filt == "⚪ Только без данных":
                 df_d = df_dashboard[df_dashboard["status_color"] == "grey"]
+            elif filt == "Только с данными (🟢🟡🔴)":
+                # По умолчанию скрываем "серых"
+                df_d = df_dashboard[df_dashboard["status_color"] != "grey"]
             else:
                 df_d = df_dashboard
 
@@ -801,7 +811,7 @@ else:
             st.dataframe(df_missing, use_container_width=True, hide_index=True)
         else:
             st.success("✅ Все сдали!")
-            
+
     # --- ДИНАМИКА ---
     with tab_dynamics:
         st.header("📈 Динамика за 30 дней")
