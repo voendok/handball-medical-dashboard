@@ -736,13 +736,23 @@ else:
                     if my_v.empty:
                         st.info("Приёмов нет.")
                     else:
+                        # --- ТАБЛИЦА ---
+                        # Берем колонки, которые есть, и переименовываем
                         d = my_v[["visit_date", "complaints", "diagnosis", "prescriptions", "recommendations"]].copy()
                         d = d.rename(columns={"visit_date": "Дата", "complaints": "Жалобы", "diagnosis": "Диагноз", "prescriptions": "Назначения", "recommendations": "Рекомендации"})
                         d["Дата"] = pd.to_datetime(d["Дата"]).dt.strftime('%d.%m.%Y')
+                        
+                        # Если диагноз пустой (None), заменяем на текст из diagnosis_text
+                        for idx, r in my_v.iterrows():
+                            if pd.isna(r['diagnosis']) or r['diagnosis'] == "":
+                                if pd.notna(r.get('diagnosis_text')) and r.get('diagnosis_text') != "":
+                                    # Находим в DataFrame и обновляем
+                                    d.loc[idx, "Диагноз"] = r['diagnosis_text']
+                                    
                         d = d.fillna("—")
                         st.dataframe(d, use_container_width=True, hide_index=True)
 
-                        # --- РЕДАКТИРОВАНИЕ ПРИЁМА ---
+                        # --- РЕДАКТИРОВАНИЕ ---
                         st.divider()
                         st.markdown("### ✏️ Редактировать приём")
                         
@@ -759,8 +769,10 @@ else:
                                     e_date = st.date_input("Дата", value=pd.to_datetime(cur_v["visit_date"]).date())
                                     e_complaints = st.text_area("Жалобы", value=cur_v.get("complaints") or "")
                                 with e_c2:
-                                    e_diagnosis = st.text_input("Диагноз", value=cur_v.get("diagnosis") or cur_v.get("diagnosis_text") or "")
+                                    e_diagnosis = st.text_input("Диагноз", value=cur_v.get("diagnosis_text") or cur_v.get("diagnosis") or "")
                                     e_prescriptions = st.text_input("Назначения", value=cur_v.get("prescriptions") or "")
+                                
+                                e_recs = st.text_area("Рекомендации", value=cur_v.get("recommendations") or "")
                                 
                                 col_save, col_del = st.columns([1, 1])
                                 with col_save:
@@ -770,6 +782,7 @@ else:
                                             "complaints": e_complaints.strip() or None,
                                             "diagnosis_text": e_diagnosis.strip() or None,
                                             "prescriptions": e_prescriptions.strip() or None,
+                                            "recommendations": e_recs.strip() or None,
                                         }).eq("id", selected_visit_id).execute()
                                         st.success("✅ Приём обновлен!")
                                         st.cache_data.clear()
@@ -781,23 +794,43 @@ else:
                                         st.cache_data.clear()
                                         st.rerun()
 
-                    # --- ДОБАВЛЕНИЕ ПРИЁМА ---
+                    # --- ДОБАВЛЕНИЕ ---
                     with st.expander("➕ Добавить новый приём"):
                         with st.form("new_visit_form"):
                             n_date = st.date_input("Дата приёма", value=date.today())
                             n_complaints = st.text_area("Жалобы")
-                            n_diagnosis = st.text_input("Диагноз")
+                            
+                            # Выбор МКБ и текста
+                            selected_diag_ids = render_diagnosis_multiselect(
+                                label="Диагнозы (МКБ)", 
+                                key_suffix=f"new_visit_{selected_aid}"
+                            )
+                            n_diagnosis_text = st.text_input("Диагноз (текстом, если нет в МКБ)")
+                            
                             n_prescriptions = st.text_input("Назначения")
+                            n_recs = st.text_area("Рекомендации")
                             
                             if st.form_submit_button("💾 Сохранить новый приём", type="primary"):
                                 try:
-                                    supabase.table("doctor_visits").insert({
+                                    # Сохраняем сам приём
+                                    resp = supabase.table("doctor_visits").insert({
                                         "athlete_id": selected_aid,
                                         "visit_date": n_date.isoformat(),
                                         "complaints": n_complaints.strip() or None,
-                                        "diagnosis_text": n_diagnosis.strip() or None,
+                                        "diagnosis_text": n_diagnosis_text.strip() or None,
                                         "prescriptions": n_prescriptions.strip() or None,
+                                        "recommendations": n_recs.strip() or None,
                                     }).execute()
+                                    
+                                    # Если есть МКБ, сохраняем связи
+                                    if resp.data and selected_diag_ids:
+                                        new_vid = resp.data[0]["id"]
+                                        for did in selected_diag_ids:
+                                            supabase.table("visit_diagnoses").insert({
+                                                "visit_id": new_vid,
+                                                "diagnosis_id": did
+                                            }).execute()
+                                            
                                     st.success("✅ Новый приём сохранен!")
                                     st.cache_data.clear()
                                     st.rerun()
