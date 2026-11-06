@@ -756,12 +756,19 @@ else:
                         st.divider()
                         st.markdown("### ✏️ Редактировать приём")
                         
-                        visit_options = {f"{pd.to_datetime(row['visit_date']).strftime('%d.%m.%Y')} — {row['complaints'][:30] if pd.notna(row['complaints']) else '—'}...": row['id'] for _, row in my_v.iterrows()}
+                        visit_options = {"— не выбрано —": None}
+                        for _, r in my_v.iterrows():
+                            label = f"{pd.to_datetime(r['visit_date']).strftime('%d.%m.%Y')} — {r['complaints'][:30] if pd.notna(r['complaints']) else '—'}..."
+                            visit_options[label] = r['id']
+                            
                         selected_visit_label = st.selectbox("Выберите приём для изменения", list(visit_options.keys()), key="edit_visit_select")
+                        selected_visit_id = visit_options[selected_visit_label]
                         
-                        if selected_visit_label:
-                            selected_visit_id = visit_options[selected_visit_label]
+                        if selected_visit_id:
                             cur_v = my_v[my_v["id"] == selected_visit_id].iloc[0]
+                            
+                            # Получаем текущие привязанные МКБ для этого приёма
+                            current_mkb = get_visit_diagnosis_labels(selected_visit_id)
                             
                             with st.form("edit_visit_form"):
                                 e_c1, e_c2 = st.columns(2)
@@ -769,24 +776,45 @@ else:
                                     e_date = st.date_input("Дата", value=pd.to_datetime(cur_v["visit_date"]).date())
                                     e_complaints = st.text_area("Жалобы", value=cur_v.get("complaints") or "")
                                 with e_c2:
-                                    e_diagnosis = st.text_input("Диагноз", value=cur_v.get("diagnosis_text") or cur_v.get("diagnosis") or "")
                                     e_prescriptions = st.text_input("Назначения", value=cur_v.get("prescriptions") or "")
+                                
+                                # ДОБАВИЛИ ВЫБОР МКБ
+                                selected_diag_ids = render_diagnosis_multiselect(
+                                    label="Диагнозы (МКБ)", 
+                                    default_labels=current_mkb,
+                                    key_suffix=f"edit_visit_{selected_visit_id}"
+                                )
+                                e_diagnosis_text = st.text_input("Диагноз (текстом)", value=cur_v.get("diagnosis_text") or "")
                                 
                                 e_recs = st.text_area("Рекомендации", value=cur_v.get("recommendations") or "")
                                 
                                 col_save, col_del = st.columns([1, 1])
                                 with col_save:
                                     if st.form_submit_button("💾 Сохранить", type="primary"):
-                                        supabase.table("doctor_visits").update({
-                                            "visit_date": e_date.isoformat(),
-                                            "complaints": e_complaints.strip() or None,
-                                            "diagnosis_text": e_diagnosis.strip() or None,
-                                            "prescriptions": e_prescriptions.strip() or None,
-                                            "recommendations": e_recs.strip() or None,
-                                        }).eq("id", selected_visit_id).execute()
-                                        st.success("✅ Приём обновлен!")
-                                        st.cache_data.clear()
-                                        st.rerun()
+                                        try:
+                                            # 1. Обновляем сам приём
+                                            supabase.table("doctor_visits").update({
+                                                "visit_date": e_date.isoformat(),
+                                                "complaints": e_complaints.strip() or None,
+                                                "diagnosis_text": e_diagnosis_text.strip() or None,
+                                                "prescriptions": e_prescriptions.strip() or None,
+                                                "recommendations": e_recs.strip() or None,
+                                            }).eq("id", selected_visit_id).execute()
+                                            
+                                            # 2. Удаляем старые МКБ и записываем новые
+                                            supabase.table("visit_diagnoses").delete().eq("visit_id", selected_visit_id).execute()
+                                            for did in selected_diag_ids:
+                                                supabase.table("visit_diagnoses").insert({
+                                                    "visit_id": selected_visit_id,
+                                                    "diagnosis_id": did
+                                                }).execute()
+                                                
+                                            st.success("✅ Приём обновлен!")
+                                            st.cache_data.clear()
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f"Ошибка: {e}")
+                                            
                                 with col_del:
                                     if st.form_submit_button("🗑️ Удалить приём", type="secondary"):
                                         supabase.table("doctor_visits").delete().eq("id", selected_visit_id).execute()
