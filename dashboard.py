@@ -205,12 +205,12 @@ def load_staff():
 # ============ ДАННЫЕ ДАШБОРДА ============
 @st.cache_data(ttl=60)
 def load_today_dashboard():
-    r = supabase.table("v_today_dashboard").select("*").execute()
+    r = supabase.table("v_dashboard_status").select("*").execute()
     return pd.DataFrame(r.data)
 
 @st.cache_data(ttl=60)
 def load_missing_reports():
-    r = supabase.table("v_missing_reports").select("*").execute()
+    r = supabase.table("v_dashboard_status").select("*").eq("morning_report_status", "Не сдал").execute()
     return pd.DataFrame(r.data)
 
 @st.cache_data(ttl=60)
