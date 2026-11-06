@@ -441,7 +441,8 @@ def load_doctor_visits():
 # ============ ЗАГРУЗКА ============
 df_dashboard = load_today_dashboard()
 df_missing = load_missing_reports()
-df_overdue = load_overdue_exams()
+# df_overdue = load_overdue_exams() # Временно отключено
+df_overdue = pd.DataFrame() # Заглушка, чтобы код не падал
 df_athletes = load_athletes()
 df_athletes_full = load_athletes_full()
 df_logs = load_health_logs(30)
