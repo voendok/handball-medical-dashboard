@@ -808,7 +808,16 @@ else:
         st.subheader("📵 Не сдали утренний отчёт")
         if not df_missing.empty:
             st.warning(f"Не сдали: {len(df_missing)}")
-            st.dataframe(df_missing, use_container_width=True, hide_index=True)
+            # Оставляем только нужные колонки и переименовываем их
+            df_missing_show = df_missing[["jersey_number", "full_name"]].copy()
+            df_missing_show = df_missing_show.rename(columns={
+                "jersey_number": "№",
+                "full_name": "ФИО"
+            })
+            # Убираем None в номере
+            df_missing_show["№"] = df_missing_show["№"].apply(lambda x: int(x) if pd.notna(x) else "—")
+            
+            st.dataframe(df_missing_show, use_container_width=True, hide_index=True)
         else:
             st.success("✅ Все сдали!")
 
