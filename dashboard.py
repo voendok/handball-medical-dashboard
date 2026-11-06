@@ -746,7 +746,7 @@ else:
                         st.divider()
                         st.markdown("### ✏️ Редактировать приём")
                         
-                        visit_options = {f"{row['visit_date'].strftime('%d.%m.%Y')} — {row['complaints'][:30] if pd.notna(row['complaints']) else '—'}...": row['id'] for _, row in my_v.iterrows()}
+                        visit_options = {f"{pd.to_datetime(row['visit_date']).strftime('%d.%m.%Y')} — {row['complaints'][:30] if pd.notna(row['complaints']) else '—'}...": row['id'] for _, row in my_v.iterrows()}
                         selected_visit_label = st.selectbox("Выберите приём для изменения", list(visit_options.keys()), key="edit_visit_select")
                         
                         if selected_visit_label:
