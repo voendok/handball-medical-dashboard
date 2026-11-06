@@ -736,24 +736,21 @@ else:
                     if my_v.empty:
                         st.info("Приёмов нет.")
                     else:
-                        # 1. Показываем таблицу
                         d = my_v[["visit_date", "complaints", "diagnosis", "prescriptions", "recommendations"]].copy()
                         d = d.rename(columns={"visit_date": "Дата", "complaints": "Жалобы", "diagnosis": "Диагноз", "prescriptions": "Назначения", "recommendations": "Рекомендации"})
                         d["Дата"] = pd.to_datetime(d["Дата"]).dt.strftime('%d.%m.%Y')
                         d = d.fillna("—")
                         st.dataframe(d, use_container_width=True, hide_index=True)
 
-                        # 2. Форма редактирования
+                        # --- РЕДАКТИРОВАНИЕ ПРИЁМА ---
                         st.divider()
                         st.markdown("### ✏️ Редактировать приём")
                         
-                        # Выпадающий список приёмов
-                        visit_options = {f"{row['visit_date'].strftime('%d.%m.%Y')} — {row['complaints'][:30]}...": row['id'] for _, row in my_v.iterrows()}
+                        visit_options = {f"{row['visit_date'].strftime('%d.%m.%Y')} — {row['complaints'][:30] if pd.notna(row['complaints']) else '—'}...": row['id'] for _, row in my_v.iterrows()}
                         selected_visit_label = st.selectbox("Выберите приём для изменения", list(visit_options.keys()), key="edit_visit_select")
                         
                         if selected_visit_label:
                             selected_visit_id = visit_options[selected_visit_label]
-                            # Достаем текущие данные выбранного приёма
                             cur_v = my_v[my_v["id"] == selected_visit_id].iloc[0]
                             
                             with st.form("edit_visit_form"):
@@ -762,7 +759,7 @@ else:
                                     e_date = st.date_input("Дата", value=pd.to_datetime(cur_v["visit_date"]).date())
                                     e_complaints = st.text_area("Жалобы", value=cur_v.get("complaints") or "")
                                 with e_c2:
-                                    e_diagnosis = st.text_input("Диагноз", value=cur_v.get("diagnosis") or "")
+                                    e_diagnosis = st.text_input("Диагноз", value=cur_v.get("diagnosis") or cur_v.get("diagnosis_text") or "")
                                     e_prescriptions = st.text_input("Назначения", value=cur_v.get("prescriptions") or "")
                                 
                                 col_save, col_del = st.columns([1, 1])
@@ -784,13 +781,34 @@ else:
                                         st.cache_data.clear()
                                         st.rerun()
 
+                    # --- ДОБАВЛЕНИЕ ПРИЁМА ---
                     with st.expander("➕ Добавить новый приём"):
-                        st.info("Форма добавления приёма будет здесь.")
+                        with st.form("new_visit_form"):
+                            n_date = st.date_input("Дата приёма", value=date.today())
+                            n_complaints = st.text_area("Жалобы")
+                            n_diagnosis = st.text_input("Диагноз")
+                            n_prescriptions = st.text_input("Назначения")
+                            
+                            if st.form_submit_button("💾 Сохранить новый приём", type="primary"):
+                                try:
+                                    supabase.table("doctor_visits").insert({
+                                        "athlete_id": selected_aid,
+                                        "visit_date": n_date.isoformat(),
+                                        "complaints": n_complaints.strip() or None,
+                                        "diagnosis_text": n_diagnosis.strip() or None,
+                                        "prescriptions": n_prescriptions.strip() or None,
+                                    }).execute()
+                                    st.success("✅ Новый приём сохранен!")
+                                    st.cache_data.clear()
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Ошибка: {e}")
 
                 # 3. АНАЛИЗЫ
                 with c_labs:
                     st.subheader("🧪 Лабораторные анализы")
                     my_l = df_lab[df_lab["athlete_id"] == selected_aid] if not df_lab.empty else pd.DataFrame()
+                    
                     if my_l.empty:
                         st.info("Анализов нет.")
                     else:
@@ -798,10 +816,33 @@ else:
                         d = d.rename(columns={"measurement_date": "Дата", "biomarker_name": "Показатель", "value": "Значение", "unit": "Ед.", "reference_min": "Мин.норма", "reference_max": "Макс.норма"})
                         d["Дата"] = pd.to_datetime(d["Дата"]).dt.strftime('%d.%m.%Y')
                         st.dataframe(d, use_container_width=True, hide_index=True)
-                    
-                    # ДОБАВИЛИ КНОПКУ ДЛЯ АНАЛИЗОВ
+
                     with st.expander("➕ Добавить анализ"):
-                        st.info("Форма добавления анализа будет здесь.")
+                        with st.form("new_lab_form"):
+                            l_c1, l_c2 = st.columns(2)
+                            with l_c1:
+                                l_date = st.date_input("Дата анализа", value=date.today())
+                                # Загружаем список биомаркеров
+                                biomarkers_dict = {row['name']: row['id'] for _, row in df_biomarkers.iterrows()}
+                                l_biomarker = st.selectbox("Показатель", list(biomarkers_dict.keys()))
+                            with l_c2:
+                                l_value = st.number_input("Значение", value=0.0, step=0.1)
+                                l_notes = st.text_input("Примечание")
+                            
+                            if st.form_submit_button("💾 Сохранить анализ", type="primary"):
+                                try:
+                                    supabase.table("lab_results").insert({
+                                        "athlete_id": selected_aid,
+                                        "biomarker_id": biomarkers_dict[l_biomarker],
+                                        "measurement_date": l_date.isoformat(),
+                                        "value": l_value,
+                                        "notes": l_notes.strip() or None
+                                    }).execute()
+                                    st.success("✅ Анализ сохранен!")
+                                    st.cache_data.clear()
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Ошибка: {e}")
 
                 # 4. ТРАВМЫ
                 with c_inj:
