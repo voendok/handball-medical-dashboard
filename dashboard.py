@@ -736,39 +736,42 @@ else:
     # --- СЕГОДНЯ ---
     with tab_today:
         st.header("📊 Сводка за сегодня")
-        # Меняем "status" на "status_color"
+        
+        # Считаем количество по цветам
         rc = len(df_dashboard[df_dashboard["status_color"] == "red"]) if not df_dashboard.empty else 0
         yc = len(df_dashboard[df_dashboard["status_color"] == "yellow"]) if not df_dashboard.empty else 0
         gc = len(df_dashboard[df_dashboard["status_color"] == "green"]) if not df_dashboard.empty else 0
-        # Серую зону убираем (или считаем тех, у кого нет данных)
-        grc = 0 
-        
+        grc = len(df_dashboard[df_dashboard["status_color"] == "grey"]) if not df_dashboard.empty else 0
+
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("🔴 Проблемы", rc)
         c2.metric("🟡 Внимание", yc)
         c3.metric("🟢 Норма", gc)
         c4.metric("⚪ Нет данных", grc)
+        
         st.divider()
         st.subheader("🚦 Статус спортсменок")
         
         if not df_dashboard.empty:
-            # Меняем фильтр
-            filt = st.selectbox("Фильтр", ["Все", "🔴 Только красные", "🟡 Только жёлтые", "🟢 Только зелёные"])
+            # Фильтр (добавили "⚪ Только без данных")
+            filt = st.selectbox("Фильтр", ["Все", "🔴 Только красные", "🟡 Только жёлтые", "🟢 Только зелёные", "⚪ Только без данных"])
+            
             if filt == "🔴 Только красные":
                 df_d = df_dashboard[df_dashboard["status_color"] == "red"]
             elif filt == "🟡 Только жёлтые":
                 df_d = df_dashboard[df_dashboard["status_color"] == "yellow"]
             elif filt == "🟢 Только зелёные":
                 df_d = df_dashboard[df_dashboard["status_color"] == "green"]
+            elif filt == "⚪ Только без данных":
+                df_d = df_dashboard[df_dashboard["status_color"] == "grey"]
             else:
                 df_d = df_dashboard
-                
-            # Меняем список колонок для вывода
-            # У нас теперь есть: jersey_number, full_name, status_text, reason_text, last_morning_hr, last_ortho_diff
+
+            # Выбираем колонки для вывода
             cols = ["jersey_number", "full_name", "status_text", "reason_text", "last_morning_hr", "last_ortho_diff"]
             av = [c for c in cols if c in df_d.columns]
             
-            # Переименовываем для красоты
+            # Переименовываем
             df_d_show = df_d[av].rename(columns={
                 "jersey_number": "№",
                 "full_name": "ФИО",
@@ -778,10 +781,27 @@ else:
                 "last_ortho_diff": "Разница"
             })
             
+            # Заменяем пустые значения (None) на прочерки
+            if "№" in df_d_show.columns:
+                df_d_show["№"] = df_d_show["№"].apply(lambda x: int(x) if pd.notna(x) else "—")
+            if "Пульс" in df_d_show.columns:
+                df_d_show["Пульс"] = df_d_show["Пульс"].fillna("—")
+            if "Разница" in df_d_show.columns:
+                df_d_show["Разница"] = df_d_show["Разница"].fillna("—")
+            
+            # Выводим таблицу
             st.dataframe(df_d_show, use_container_width=True, hide_index=True)
         else:
             st.info("Нет данных за сегодня.")
 
+        st.divider()
+        st.subheader("📵 Не сдали утренний отчёт")
+        if not df_missing.empty:
+            st.warning(f"Не сдали: {len(df_missing)}")
+            st.dataframe(df_missing, use_container_width=True, hide_index=True)
+        else:
+            st.success("✅ Все сдали!")
+            
     # --- ДИНАМИКА ---
     with tab_dynamics:
         st.header("📈 Динамика за 30 дней")
