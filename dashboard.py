@@ -640,6 +640,12 @@ else:
                         bd = pd.to_datetime(row.get('birth_date')).strftime('%d.%m.%Y') if pd.notna(row.get('birth_date')) else '—'
                         st.markdown(f"**Дата рождения:** {bd}")
                         st.markdown(f"**Игровой номер:** {int(row['jersey_number']) if pd.notna(row.get('jersey_number')) else '—'}")
+                        pos_name = "—"
+                        if pd.notna(row.get("position_id")):
+                            pos_match = df_positions[df_positions["id"] == row["position_id"]]
+                            if not pos_match.empty:
+                                pos_name = pos_match.iloc[0]["name"]
+                        st.markdown(f"**Амплуа:** {pos_name}")
                     with c2:
                         bt = row.get('blood_type')
                         rh = row.get('rh_factor')
