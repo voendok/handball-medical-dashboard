@@ -570,15 +570,61 @@ else:
     with tab_card:
         st.header("👤 Карточка спортсменки")
         
-        opts = athlete_options_dict()
-        if not opts:
-            st.info("Нет активных спортсменок.")
+        # Переключатель режимов
+        mode = st.radio("Режим работы", ["📋 Выбрать существующую", "➕ Добавить новую"], horizontal=True)
+
+        if mode == "➕ Добавить новую":
+            st.subheader("Новая спортсменка")
+            with st.form("form_new_athlete"):
+                c1, c2 = st.columns(2)
+                with c1:
+                    new_full_name = st.text_input("ФИО *", placeholder="Иванова Анна Сергеевна")
+                    new_birth_date = st.date_input("Дата рождения *", value=date(2008, 1, 1))
+                    new_jersey = st.number_input("Игровой номер", min_value=0, max_value=999, value=0)
+                    new_start_year = st.number_input("Год начала занятий", min_value=1950, max_value=date.today().year, value=date.today().year)
+                with c2:
+                    new_phone = st.text_input("Телефон", placeholder="+375 29 123-45-67")
+                    new_blood_type = st.selectbox("Группа крови", ["— не указана —", "1", "2", "3", "4"])
+                    new_rh = st.selectbox("Резус-фактор", ["— не указан —", "+", "−"])
+                    new_telegram = st.text_input("Telegram ID (если есть)")
+                
+                new_allergies = st.text_area("Аллергии")
+                new_notes = st.text_area("Заметки врача")
+                
+                if st.form_submit_button("💾 Создать спортсменку", type="primary"):
+                    if not new_full_name.strip():
+                        st.error("ФИО обязательно")
+                    else:
+                        try:
+                            supabase.table("athletes").insert({
+                                "full_name": new_full_name.strip(),
+                                "birth_date": new_birth_date.isoformat(),
+                                "jersey_number": int(new_jersey) if new_jersey > 0 else None,
+                                "handball_start_year": int(new_start_year),
+                                "phone": new_phone.strip() or None,
+                                "blood_type": new_blood_type if new_blood_type != "— не указана —" else None,
+                                "rh_factor": new_rh if new_rh != "— не указан —" else None,
+                                "telegram_user_id": new_telegram.strip() or None,
+                                "allergies": new_allergies.strip() or None,
+                                "medical_notes": new_notes.strip() or None,
+                                "is_active": True
+                            }).execute()
+                            st.success(f"✅ Спортсменка {new_full_name} создана!")
+                            st.cache_data.clear()
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Ошибка: {e}")
+        
         else:
-            sel_key = st.selectbox("Выберите спортсменку", list(opts.keys()), key="card_select")
-            selected_aid = opts[sel_key]
-            
-            if selected_aid:
-                row = df_athletes_full[df_athletes_full["id"] == selected_aid].iloc[0]
+            opts = athlete_options_dict()
+            if not opts:
+                st.info("Нет активных спортсменок.")
+            else:
+                sel_key = st.selectbox("Выберите спортсменку", list(opts.keys()), key="card_select")
+                selected_aid = opts[sel_key]
+                
+                if selected_aid:
+                    row = df_athletes_full[df_athletes_full["id"] == selected_aid].iloc[0]
                 
                 # --- ШАПКА КАРТОЧКИ ---
                 with st.expander("📝 Общая информация", expanded=False):
@@ -599,7 +645,44 @@ else:
                         st.markdown(f"**Аллергии:** {row.get('allergies') or '—'}")
                         st.markdown(f"**Экстренный контакт:** {row.get('emergency_contact') or '—'} {row.get('emergency_phone') or ''}")
                         st.markdown(f"**Заметки:** {row.get('medical_notes') or '—'}")
-                
+
+                # --- РЕДАКТИРОВАНИЕ ПРОФИЛЯ ---
+                with st.expander("✏️ Редактировать профиль спортсменки"):
+                    with st.form("edit_athlete_form"):
+                        c_e1, c_e2, c_e3 = st.columns(3)
+                        with c_e1:
+                            new_name = st.text_input("ФИО", value=row.get("full_name", ""))
+                            new_bd = st.date_input("Дата рождения", value=pd.to_datetime(row.get("birth_date")).date() if pd.notna(row.get("birth_date")) else date.today())
+                            new_jersey = st.number_input("Игровой номер", min_value=0, max_value=999, value=int(row.get("jersey_number")) if pd.notna(row.get("jersey_number")) else 0)
+                        with c_e2:
+                            new_blood = st.text_input("Группа крови", value=row.get("blood_type", "") or "")
+                            new_rh = st.selectbox("Резус-фактор", ["— не указан —", "+", "−"], index=0 if pd.isna(row.get("rh_factor")) else (1 if row.get("rh_factor") == "+" else 2))
+                            new_phone = st.text_input("Телефон", value=row.get("phone", "") or "")
+                        with c_e3:
+                            new_allergies = st.text_area("Аллергии", value=row.get("allergies", "") or "", height=68)
+                            new_notes = st.text_area("Заметки врача", value=row.get("medical_notes", "") or "", height=68)
+                        
+                        if st.form_submit_button("💾 Сохранить изменения", type="primary"):
+                            try:
+                                supabase.table("athletes").update({
+                                    "full_name": new_name.strip(),
+                                    "birth_date": new_bd.isoformat(),
+                                    "jersey_number": int(new_jersey) if new_jersey > 0 else None,
+                                    "blood_type": new_blood.strip() or None,
+                                    "rh_factor": new_rh if new_rh != "— не указан —" else None,
+                                    "phone": new_phone.strip() or None,
+                                    "allergies": new_allergies.strip() or None,
+                                    "medical_notes": new_notes.strip() or None
+                                }).eq("id", selected_aid).execute()
+                                st.success("✅ Профиль обновлен!")
+                                st.cache_data.clear()
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Ошибка: {e}")
+
+                st.divider()
+
+                # --- ПОДВКЛАДКИ КАРТОЧКИ ---                
                 st.divider()
 
                 # --- ПОДВКЛАДКИ КАРТОЧКИ ---
@@ -628,15 +711,58 @@ else:
                 with c_visits:
                     st.subheader("🩺 Журнал приёмов")
                     my_v = df_visits[df_visits["athlete_id"] == selected_aid] if not df_visits.empty else pd.DataFrame()
+                    
                     if my_v.empty:
                         st.info("Приёмов нет.")
                     else:
+                        # 1. Показываем таблицу
                         d = my_v[["visit_date", "complaints", "diagnosis", "prescriptions", "recommendations"]].copy()
                         d = d.rename(columns={"visit_date": "Дата", "complaints": "Жалобы", "diagnosis": "Диагноз", "prescriptions": "Назначения", "recommendations": "Рекомендации"})
                         d["Дата"] = pd.to_datetime(d["Дата"]).dt.strftime('%d.%m.%Y')
                         d = d.fillna("—")
                         st.dataframe(d, use_container_width=True, hide_index=True)
-                    
+
+                        # 2. Форма редактирования
+                        st.divider()
+                        st.markdown("### ✏️ Редактировать приём")
+                        
+                        # Выпадающий список приёмов
+                        visit_options = {f"{row['visit_date'].strftime('%d.%m.%Y')} — {row['complaints'][:30]}...": row['id'] for _, row in my_v.iterrows()}
+                        selected_visit_label = st.selectbox("Выберите приём для изменения", list(visit_options.keys()), key="edit_visit_select")
+                        
+                        if selected_visit_label:
+                            selected_visit_id = visit_options[selected_visit_label]
+                            # Достаем текущие данные выбранного приёма
+                            cur_v = my_v[my_v["id"] == selected_visit_id].iloc[0]
+                            
+                            with st.form("edit_visit_form"):
+                                e_c1, e_c2 = st.columns(2)
+                                with e_c1:
+                                    e_date = st.date_input("Дата", value=pd.to_datetime(cur_v["visit_date"]).date())
+                                    e_complaints = st.text_area("Жалобы", value=cur_v.get("complaints") or "")
+                                with e_c2:
+                                    e_diagnosis = st.text_input("Диагноз", value=cur_v.get("diagnosis") or "")
+                                    e_prescriptions = st.text_input("Назначения", value=cur_v.get("prescriptions") or "")
+                                
+                                col_save, col_del = st.columns([1, 1])
+                                with col_save:
+                                    if st.form_submit_button("💾 Сохранить", type="primary"):
+                                        supabase.table("doctor_visits").update({
+                                            "visit_date": e_date.isoformat(),
+                                            "complaints": e_complaints.strip() or None,
+                                            "diagnosis_text": e_diagnosis.strip() or None,
+                                            "prescriptions": e_prescriptions.strip() or None,
+                                        }).eq("id", selected_visit_id).execute()
+                                        st.success("✅ Приём обновлен!")
+                                        st.cache_data.clear()
+                                        st.rerun()
+                                with col_del:
+                                    if st.form_submit_button("🗑️ Удалить приём", type="secondary"):
+                                        supabase.table("doctor_visits").delete().eq("id", selected_visit_id).execute()
+                                        st.success("✅ Приём удален!")
+                                        st.cache_data.clear()
+                                        st.rerun()
+
                     with st.expander("➕ Добавить новый приём"):
                         st.info("Форма добавления приёма будет здесь.")
 
