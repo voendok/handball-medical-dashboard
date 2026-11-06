@@ -619,10 +619,8 @@ else:
                         st.info("Нет данных за 30 дней.")
                     else:
                         dfc = my_logs[["log_date", "morning_hr", "ortho_hr_after", "sleep_hours", "appetite_score"]].sort_values("log_date").set_index("log_date")
-                        
                         st.markdown("**Пульс (лежа / стоя)**")
                         st.line_chart(dfc[["morning_hr", "ortho_hr_after"]], use_container_width=True)
-                        
                         st.markdown("**Сон и Аппетит (от 1 до 5)**")
                         st.bar_chart(dfc[["sleep_hours", "appetite_score"]], use_container_width=True)
 
@@ -630,7 +628,6 @@ else:
                 with c_visits:
                     st.subheader("🩺 Журнал приёмов")
                     my_v = df_visits[df_visits["athlete_id"] == selected_aid] if not df_visits.empty else pd.DataFrame()
-                    
                     if my_v.empty:
                         st.info("Приёмов нет.")
                     else:
@@ -654,6 +651,10 @@ else:
                         d = d.rename(columns={"measurement_date": "Дата", "biomarker_name": "Показатель", "value": "Значение", "unit": "Ед.", "reference_min": "Мин.норма", "reference_max": "Макс.норма"})
                         d["Дата"] = pd.to_datetime(d["Дата"]).dt.strftime('%d.%m.%Y')
                         st.dataframe(d, use_container_width=True, hide_index=True)
+                    
+                    # ДОБАВИЛИ КНОПКУ ДЛЯ АНАЛИЗОВ
+                    with st.expander("➕ Добавить анализ"):
+                        st.info("Форма добавления анализа будет здесь.")
 
                 # 4. ТРАВМЫ
                 with c_inj:
@@ -700,6 +701,10 @@ else:
                         d["Дата"] = pd.to_datetime(d["Дата"]).dt.strftime('%d.%m.%Y')
                         st.dataframe(d, use_container_width=True, hide_index=True)
 
+                    # ДОБАВИЛИ КНОПКУ ДЛЯ АНТРОПОМЕТРИИ
+                    with st.expander("➕ Добавить измерение"):
+                        st.info("Форма добавления антропометрии будет здесь.")
+
                 # 7. ЛЕКАРСТВА
                 with c_meds:
                     st.subheader("💊 Лекарства")
@@ -714,6 +719,10 @@ else:
                         d = d.fillna("—")
                         st.dataframe(d, use_container_width=True, hide_index=True)
 
+                    # ДОБАВИЛИ КНОПКУ ДЛЯ ЛЕКАРСТВ
+                    with st.expander("➕ Назначить лекарство"):
+                        st.info("Форма назначения лекарства будет здесь.")
+
                 # 8. ПРИВИВКИ
                 with c_vacc:
                     st.subheader("💉 Прививки")
@@ -726,6 +735,10 @@ else:
                         d["Дата"] = pd.to_datetime(d["Дата"]).dt.strftime('%d.%m.%Y')
                         d = d.fillna("—")
                         st.dataframe(d, use_container_width=True, hide_index=True)
+
+                    # ДОБАВИЛИ КНОПКУ ДЛЯ ПРИВИВОК
+                    with st.expander("➕ Добавить прививку"):
+                        st.info("Форма добавления прививки будет здесь.")
 
 
     # ------------------------------------------
