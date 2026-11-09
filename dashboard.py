@@ -866,7 +866,7 @@ else:
                                     st.error(f"Ошибка: {e}")
 
                 # 3. АНАЛИЗЫ
-                                with c_labs:
+                with c_labs:
                     st.subheader("🧪 Лабораторные анализы")
                     my_l = df_lab[df_lab["athlete_id"] == selected_aid] if not df_lab.empty else pd.DataFrame()
                     
