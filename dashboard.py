@@ -218,6 +218,11 @@ def load_staff():
     r = supabase.table("staff").select("id, full_name, role").order("full_name").execute()
     return pd.DataFrame(r.data)
 
+@st.cache_data(ttl=60)
+def load_exam_categories():
+    r = supabase.table("dict_exam_categories").select("name").order("id").execute()
+    return [row["name"] for row in r.data] if r.data else ["Прочее"]
+
 # ============ ДАННЫЕ ДАШБОРДА ============
 @st.cache_data(ttl=60)
 def load_today_dashboard():
@@ -480,6 +485,7 @@ df_test_types = load_test_types()
 df_biomarkers = load_biomarkers()
 df_staff = load_staff()
 df_positions = load_positions()
+df_exam_categories = load_exam_categories()
 
 # ============ ЗАГОЛОВОК ============
 st.title("🏐 Медицинский дашборд команды")
@@ -985,16 +991,26 @@ else:
                     with lab_subtab2:
                         my_docs = load_athlete_documents(selected_aid)
                         
-                        # Список категорий, которые мы хотим видеть в меню
-                        categories = ["Анализы", "Лучевая диагностика", "Функциональные исследования", "Прочее"]
+                        # Берем категории из справочника в базе
+                        categories = df_exam_categories
+                        
+                        # --- УПРАВЛЕНИЕ КАТЕГОРИЯМИ ---
+                        with st.expander("⚙️ Управление категориями обследований"):
+                            new_cat_name = st.text_input("Новая категория", placeholder="Например: Мануальное тестирование")
+                            if st.button("➕ Добавить категорию"):
+                                if new_cat_name.strip():
+                                    try:
+                                        supabase.table("dict_exam_categories").insert({"name": new_cat_name.strip()}).execute()
+                                        st.success("Категория добавлена!")
+                                        st.cache_data.clear()
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Ошибка (возможно, категория уже существует): {e}")
                         
                         doc_categories = {}
                         for cat in categories:
-                            # Фильтруем документы. Если category = None, кидаем в Прочее
                             if not my_docs.empty:
-                                # Если колонка category есть, используем её
                                 if "category" in my_docs.columns:
-                                    # Заменяем None на "Прочее"
                                     my_docs["category"] = my_docs["category"].fillna("Прочее")
                                     docs_in_cat = my_docs[my_docs["category"] == cat]
                                 else:
@@ -1004,9 +1020,6 @@ else:
                                 
                             if not docs_in_cat.empty:
                                 doc_categories[cat] = docs_in_cat
-
-                        if not doc_categories:
-                            st.info("Документов нет.")
                         else:
                             for cat_name, docs_df in doc_categories.items():
                                 st.markdown(f"### 📁 {cat_name}")
