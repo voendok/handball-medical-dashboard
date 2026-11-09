@@ -708,9 +708,9 @@ else:
 
                 # --- ПОДВКЛАДКИ КАРТОЧКИ ---
                 c_tabs = st.tabs([
-                    "📊 Мониторинг", "🩺 Приёмы", "🧪 Анализы", 
+                    "📊 Мониторинг", "🩺 Приёмы", "🔬 Обследования", 
                     "🩹 Травмы", "🏥 Осмотры", "📏 Антропометрия", 
-                    "💊 Лекарства", "💉 Прививки"
+                    "💊 Медикаменты", "💉 Прививки"
                 ])
                 (c_mon, c_visits, c_labs, c_inj, c_exams, c_anthro, c_meds, c_vacc) = c_tabs
 
@@ -865,89 +865,184 @@ else:
                                 except Exception as e:
                                     st.error(f"Ошибка: {e}")
 
-                # 3. АНАЛИЗЫ
+                # 3. ОБСЛЕДОВАНИЯ
                 with c_labs:
-                    st.subheader("🧪 Лабораторные анализы")
-                    my_l = df_lab[df_lab["athlete_id"] == selected_aid] if not df_lab.empty else pd.DataFrame()
+                    st.subheader("🔬 Медицинские обследования")
                     
-                    if my_l.empty:
-                        st.info("Анализов нет.")
-                    else:
-                        # --- ГРУППИРОВКА ПО ДАТАМ ---
-                        # Преобразуем дату в объект, чтобы можно было сортировать и группировать
-                        my_l["date_obj"] = pd.to_datetime(my_l["measurement_date"]).dt.date
-                        unique_dates = sorted(my_l["date_obj"].unique(), reverse=True)
-                        
-                        for d_date in unique_dates:
-                            date_str = d_date.strftime('%d.%m.%Y')
-                            daily_results = my_l[my_l["date_obj"] == d_date]
-                            
-                            # Раскрывающийся блок для каждого дня
-                            with st.expander(f"📅 Анализы от {date_str} ({len(daily_results)} показателей)"):
-                                # 1. Таблица
-                                d_show = daily_results[["biomarker_name", "value", "unit", "reference_min", "reference_max"]].copy()
-                                d_show = d_show.rename(columns={"biomarker_name": "Показатель", "value": "Значение", "unit": "Ед.", "reference_min": "Мин.норма", "reference_max": "Макс.норма"})
-                                st.dataframe(d_show, use_container_width=True, hide_index=True)
-                                
-                                # 2. Редактирование внутри дня
-                                st.markdown("**✏️ Редактировать показатель**")
-                                edit_options = {f"{row['biomarker_name']} ({row['value']} {row['unit']})": row['id'] for _, row in daily_results.iterrows()}
-                                selected_lab_label = st.selectbox("Выберите показатель для изменения", ["— не выбрано —"] + list(edit_options.keys()), key=f"edit_lab_select_{d_date}")
-                                
-                                if selected_lab_label and selected_lab_label != "— не выбрано —":
-                                    selected_lab_id = edit_options[selected_lab_label]
-                                    cur_l = daily_results[daily_results["id"] == selected_lab_id].iloc[0]
-                                    
-                                    with st.form(f"edit_lab_form_{d_date}"):
-                                        lc1, lc2 = st.columns(2)
-                                        with lc1:
-                                            e_value = st.number_input("Значение", value=float(cur_l["value"]), step=0.1)
-                                        with lc2:
-                                            e_notes = st.text_input("Примечание", value=cur_l.get("notes") or "")
-                                            
-                                        col_save, col_del = st.columns([1, 1])
-                                        with col_save:
-                                            if st.form_submit_button("💾 Сохранить", type="primary"):
-                                                supabase.table("lab_results").update({
-                                                    "value": e_value,
-                                                    "notes": e_notes.strip() or None
-                                                }).eq("id", selected_lab_id).execute()
-                                                st.success("✅ Анализ обновлен!")
-                                                st.cache_data.clear()
-                                                st.rerun()
-                                        with col_del:
-                                            if st.form_submit_button("🗑️ Удалить", type="secondary"):
-                                                supabase.table("lab_results").delete().eq("id", selected_lab_id).execute()
-                                                st.success("✅ Анализ удален!")
-                                                st.cache_data.clear()
-                                                st.rerun()
+                    # Создаем две подвкладки: Цифры и Документы
+                    lab_subtab1, lab_subtab2 = st.tabs(["📊 Лабораторные данные (Цифры)", "📄 Документы и сканы (PDF)"])
 
-                    # --- ФОРМА ДОБАВЛЕНИЯ ---
-                    with st.expander("➕ Добавить новый анализ"):
-                        with st.form("new_lab_form"):
-                            l_c1, l_c2 = st.columns(2)
-                            with l_c1:
-                                l_date = st.date_input("Дата анализа", value=date.today())
-                                biomarkers_dict = {row['name']: row['id'] for _, row in df_biomarkers.iterrows()}
-                                l_biomarker = st.selectbox("Показатель", list(biomarkers_dict.keys()))
-                            with l_c2:
-                                l_value = st.number_input("Значение", value=0.0, step=0.1)
-                                l_notes = st.text_input("Примечание")
+                    # ==========================================
+                    # ПОДВКЛАДКА 1: ЛАБОРАТОРНЫЕ ДАННЫЕ
+                    # ==========================================
+                    with lab_subtab1:
+                        my_l = df_lab[df_lab["athlete_id"] == selected_aid] if not df_lab.empty else pd.DataFrame()
+                        
+                        if my_l.empty:
+                            st.info("Анализов нет.")
+                        else:
+                            # Группировка по датам
+                            my_l["date_obj"] = pd.to_datetime(my_l["measurement_date"]).dt.date
+                            unique_dates = sorted(my_l["date_obj"].unique(), reverse=True)
                             
-                            if st.form_submit_button("💾 Сохранить анализ", type="primary"):
-                                try:
-                                    supabase.table("lab_results").insert({
-                                        "athlete_id": selected_aid,
-                                        "biomarker_id": biomarkers_dict[l_biomarker],
-                                        "measurement_date": l_date.isoformat(),
-                                        "value": l_value,
-                                        "notes": l_notes.strip() or None
-                                    }).execute()
-                                    st.success("✅ Анализ сохранен!")
-                                    st.cache_data.clear()
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Ошибка: {e}")
+                            for d_date in unique_dates:
+                                date_str = d_date.strftime('%d.%m.%Y')
+                                daily_results = my_l[my_l["date_obj"] == d_date]
+                                
+                                with st.expander(f"📅 Анализы от {date_str} ({len(daily_results)} показателей)"):
+                                    # Таблица с подсветкой
+                                    d_show = daily_results[["biomarker_name", "value", "unit", "reference_min", "reference_max"]].copy()
+                                    d_show = d_show.rename(columns={"biomarker_name": "Показатель", "value": "Значение", "unit": "Ед.", "reference_min": "Мин.норма", "reference_max": "Макс.норма"})
+                                    
+                                    # Применяем функцию подсветки
+                                    styled_df = d_show.style.apply(highlight_lab_results, axis=1)
+                                    st.dataframe(styled_df, use_container_width=True, hide_index=True)
+                                    
+                                    # Редактирование
+                                    st.markdown("**✏️ Редактировать показатель**")
+                                    edit_options = {f"{row['biomarker_name']} ({row['value']} {row['unit']})": row['id'] for _, row in daily_results.iterrows()}
+                                    selected_lab_label = st.selectbox("Выберите показатель для изменения", ["— не выбрано —"] + list(edit_options.keys()), key=f"edit_lab_select_{d_date}")
+                                    
+                                    if selected_lab_label and selected_lab_label != "— не выбрано —":
+                                        selected_lab_id = edit_options[selected_lab_label]
+                                        cur_l = daily_results[daily_results["id"] == selected_lab_id].iloc[0]
+                                        
+                                        with st.form(f"edit_lab_form_{d_date}"):
+                                            lc1, lc2 = st.columns(2)
+                                            with lc1:
+                                                e_value = st.number_input("Значение", value=float(cur_l["value"]), step=0.1)
+                                            with lc2:
+                                                e_notes = st.text_input("Примечание", value=cur_l.get("notes") or "")
+                                                
+                                            col_save, col_del = st.columns([1, 1])
+                                            with col_save:
+                                                if st.form_submit_button("💾 Сохранить", type="primary"):
+                                                    supabase.table("lab_results").update({
+                                                        "value": e_value,
+                                                        "notes": e_notes.strip() or None
+                                                    }).eq("id", selected_lab_id).execute()
+                                                    st.success("✅ Анализ обновлен!")
+                                                    st.cache_data.clear()
+                                                    st.rerun()
+                                            with col_del:
+                                                if st.form_submit_button("🗑️ Удалить", type="secondary"):
+                                                    supabase.table("lab_results").delete().eq("id", selected_lab_id).execute()
+                                                    st.success("✅ Анализ удален!")
+                                                    st.cache_data.clear()
+                                                    st.rerun()
+
+                        # Форма добавления новых цифровых данных
+                        with st.expander("➕ Добавить лабораторный показатель"):
+                            with st.form("new_lab_form"):
+                                l_c1, l_c2 = st.columns(2)
+                                with l_c1:
+                                    l_date = st.date_input("Дата анализа", value=date.today())
+                                    biomarkers_dict = {row['name']: row['id'] for _, row in df_biomarkers.iterrows()}
+                                    l_biomarker = st.selectbox("Показатель", list(biomarkers_dict.keys()))
+                                with l_c2:
+                                    l_value = st.number_input("Значение", value=0.0, step=0.1)
+                                    l_notes = st.text_input("Примечание")
+                                
+                                if st.form_submit_button("💾 Сохранить анализ", type="primary"):
+                                    try:
+                                        supabase.table("lab_results").insert({
+                                            "athlete_id": selected_aid,
+                                            "biomarker_id": biomarkers_dict[l_biomarker],
+                                            "measurement_date": l_date.isoformat(),
+                                            "value": l_value,
+                                            "notes": l_notes.strip() or None
+                                        }).execute()
+                                        st.success("✅ Анализ сохранен!")
+                                        st.cache_data.clear()
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Ошибка: {e}")
+
+                    # ==========================================
+                    # ПОДВКЛАДКА 2: ДОКУМЕНТЫ (PDF)
+                    # ==========================================
+                    with lab_subtab2:
+                        my_docs = load_athlete_documents(selected_aid)
+                        categories = ["Анализы", "Лучевая диагностика", "Функциональные исследования", "Прочее"]
+                        
+                        doc_categories = {}
+                        for cat in categories:
+                            if not my_docs.empty and "category" in my_docs.columns:
+                                docs_in_cat = my_docs[my_docs["category"] == cat]
+                            else:
+                                docs_in_cat = pd.DataFrame()
+                            if not docs_in_cat.empty:
+                                doc_categories[cat] = docs_in_cat
+
+                        if not doc_categories:
+                            st.info("Документов нет.")
+                        else:
+                            for cat_name, docs_df in doc_categories.items():
+                                st.markdown(f"### 📁 {cat_name}")
+                                for _, doc in docs_df.iterrows():
+                                    url = get_public_file_url(doc["file_path"])
+                                    with st.expander(f"📄 {doc['file_name']} (от {pd.to_datetime(doc['upload_date']).strftime('%d.%m.%Y')})"):
+                                        st.markdown(f"**Тип:** {doc.get('document_type', '—')}")
+                                        if pd.notna(doc.get("comment")):
+                                            st.markdown(f"**Комментарий:** {doc['comment']}")
+                                        
+                                        if url:
+                                            st.markdown(f"[📥 Открыть/Скачать PDF]({url})", unsafe_allow_html=True)
+                                        else:
+                                            st.warning("Файл не найден в хранилище.")
+
+                                        if st.button("🗑️ Удалить документ", key=f"del_doc_{doc['id']}"):
+                                            try:
+                                                supabase.storage.from_("medical_documents").remove([doc["file_path"]])
+                                                supabase.table("documents").delete().eq("id", doc["id"]).execute()
+                                                st.success("Документ удален!")
+                                                st.cache_data.clear()
+                                                st.rerun()
+                                            except Exception as e:
+                                                st.error(f"Ошибка: {e}")
+                                st.divider()
+
+                        # Форма загрузки нового документа
+                        with st.expander("➕ Загрузить новое обследование (PDF)"):
+                            with st.form("new_doc_form", clear_on_submit=True):
+                                d_c1, d_c2 = st.columns(2)
+                                with d_c1:
+                                    d_date = st.date_input("Дата обследования", value=date.today())
+                                    d_cat = st.selectbox("Категория", categories)
+                                    d_type = st.text_input("Наименование (ОАК, МРТ, ЭКГ...)")
+                                with d_c2:
+                                    d_comment = st.text_area("Комментарий")
+                                    uploaded_file = st.file_uploader("Выберите PDF-файл", type=["pdf"])
+                                
+                                if st.form_submit_button("💾 Загрузить", type="primary"):
+                                    if not uploaded_file:
+                                        st.error("Выберите файл.")
+                                    else:
+                                        try:
+                                            file_name = uploaded_file.name
+                                            file_path = f"{selected_aid}/{file_name}"
+                                            
+                                            supabase.storage.from_("medical_documents").upload(
+                                                path=file_path,
+                                                file=uploaded_file.getvalue(),
+                                                file_options={"content-type": "application/pdf"}
+                                            )
+                                            
+                                            supabase.table("documents").insert({
+                                                "athlete_id": selected_aid,
+                                                "upload_date": d_date.isoformat(),
+                                                "document_type": d_type if d_type else "Обследование",
+                                                "category": d_cat,
+                                                "file_path": file_path,
+                                                "file_name": file_name,
+                                                "comment": d_comment.strip() or None
+                                            }).execute()
+                                            
+                                            st.success("✅ Документ загружен!")
+                                            st.cache_data.clear()
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f"Ошибка загрузки: {e}")
 
                 # 4. ТРАВМЫ
                 with c_inj:
