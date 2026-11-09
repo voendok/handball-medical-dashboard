@@ -866,24 +866,68 @@ else:
                                     st.error(f"Ошибка: {e}")
 
                 # 3. АНАЛИЗЫ
-                with c_labs:
+                                with c_labs:
                     st.subheader("🧪 Лабораторные анализы")
                     my_l = df_lab[df_lab["athlete_id"] == selected_aid] if not df_lab.empty else pd.DataFrame()
                     
                     if my_l.empty:
                         st.info("Анализов нет.")
                     else:
-                        d = my_l[["measurement_date", "biomarker_name", "value", "unit", "reference_min", "reference_max"]].copy()
-                        d = d.rename(columns={"measurement_date": "Дата", "biomarker_name": "Показатель", "value": "Значение", "unit": "Ед.", "reference_min": "Мин.норма", "reference_max": "Макс.норма"})
-                        d["Дата"] = pd.to_datetime(d["Дата"]).dt.strftime('%d.%m.%Y')
-                        st.dataframe(d, use_container_width=True, hide_index=True)
+                        # --- ГРУППИРОВКА ПО ДАТАМ ---
+                        # Преобразуем дату в объект, чтобы можно было сортировать и группировать
+                        my_l["date_obj"] = pd.to_datetime(my_l["measurement_date"]).dt.date
+                        unique_dates = sorted(my_l["date_obj"].unique(), reverse=True)
+                        
+                        for d_date in unique_dates:
+                            date_str = d_date.strftime('%d.%m.%Y')
+                            daily_results = my_l[my_l["date_obj"] == d_date]
+                            
+                            # Раскрывающийся блок для каждого дня
+                            with st.expander(f"📅 Анализы от {date_str} ({len(daily_results)} показателей)"):
+                                # 1. Таблица
+                                d_show = daily_results[["biomarker_name", "value", "unit", "reference_min", "reference_max"]].copy()
+                                d_show = d_show.rename(columns={"biomarker_name": "Показатель", "value": "Значение", "unit": "Ед.", "reference_min": "Мин.норма", "reference_max": "Макс.норма"})
+                                st.dataframe(d_show, use_container_width=True, hide_index=True)
+                                
+                                # 2. Редактирование внутри дня
+                                st.markdown("**✏️ Редактировать показатель**")
+                                edit_options = {f"{row['biomarker_name']} ({row['value']} {row['unit']})": row['id'] for _, row in daily_results.iterrows()}
+                                selected_lab_label = st.selectbox("Выберите показатель для изменения", ["— не выбрано —"] + list(edit_options.keys()), key=f"edit_lab_select_{d_date}")
+                                
+                                if selected_lab_label and selected_lab_label != "— не выбрано —":
+                                    selected_lab_id = edit_options[selected_lab_label]
+                                    cur_l = daily_results[daily_results["id"] == selected_lab_id].iloc[0]
+                                    
+                                    with st.form(f"edit_lab_form_{d_date}"):
+                                        lc1, lc2 = st.columns(2)
+                                        with lc1:
+                                            e_value = st.number_input("Значение", value=float(cur_l["value"]), step=0.1)
+                                        with lc2:
+                                            e_notes = st.text_input("Примечание", value=cur_l.get("notes") or "")
+                                            
+                                        col_save, col_del = st.columns([1, 1])
+                                        with col_save:
+                                            if st.form_submit_button("💾 Сохранить", type="primary"):
+                                                supabase.table("lab_results").update({
+                                                    "value": e_value,
+                                                    "notes": e_notes.strip() or None
+                                                }).eq("id", selected_lab_id).execute()
+                                                st.success("✅ Анализ обновлен!")
+                                                st.cache_data.clear()
+                                                st.rerun()
+                                        with col_del:
+                                            if st.form_submit_button("🗑️ Удалить", type="secondary"):
+                                                supabase.table("lab_results").delete().eq("id", selected_lab_id).execute()
+                                                st.success("✅ Анализ удален!")
+                                                st.cache_data.clear()
+                                                st.rerun()
 
-                    with st.expander("➕ Добавить анализ"):
+                    # --- ФОРМА ДОБАВЛЕНИЯ ---
+                    with st.expander("➕ Добавить новый анализ"):
                         with st.form("new_lab_form"):
                             l_c1, l_c2 = st.columns(2)
                             with l_c1:
                                 l_date = st.date_input("Дата анализа", value=date.today())
-                                # Загружаем список биомаркеров
                                 biomarkers_dict = {row['name']: row['id'] for _, row in df_biomarkers.iterrows()}
                                 l_biomarker = st.selectbox("Показатель", list(biomarkers_dict.keys()))
                             with l_c2:
