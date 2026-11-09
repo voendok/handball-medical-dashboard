@@ -73,17 +73,31 @@ def athlete_options_dict():
             label = f"№{j} — {row['full_name']}" if j else f"(без номера) {row['full_name']}"
             opts[label] = row['id']
     return opts
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=10)  # Уменьшили кэш до 10 секунд, чтобы данные обновлялись быстрее
 def load_athlete_documents(athlete_id):
     """Загружает список документов спортсменки."""
     try:
+        # Явно запрашиваем все нужные поля, включая новую category
         r = supabase.table("documents") \
-            .select("id, document_type, file_name, file_path, upload_date, comment") \
+            .select("id, document_type, category, file_name, file_path, upload_date, comment") \
             .eq("athlete_id", athlete_id) \
             .order("upload_date", desc=True) \
             .execute()
-        return pd.DataFrame(r.data)
-    except Exception:
+        
+        df = pd.DataFrame(r.data)
+        # Если база вернула пустоту — возвращаем пустой датафрейм
+        if df.empty:
+            return pd.DataFrame(columns=["id", "document_type", "category", "file_name", "file_path", "upload_date", "comment"])
+            
+        # Если колонки category нет (на случай старых записей), создаем её
+        if "category" not in df.columns:
+            df["category"] = "Прочее"
+        else:
+            df["category"] = df["category"].fillna("Прочее")
+            
+        return df
+    except Exception as e:
+        st.error(f"Ошибка загрузки документов: {e}")
         return pd.DataFrame()
 def load_positions():
     r = supabase.table("dict_positions").select("id, name").order("name").execute()
