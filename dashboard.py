@@ -917,7 +917,7 @@ else:
                                         }, na_rep="—") \
                                         .apply(highlight_lab_results, axis=1)
                                         
-                                    st.dataframe(styled_df, use_container_width=True, hide_index=True))
+                                    st.dataframe(styled_df, use_container_width=True, hide_index=True)
                                     
                                     # Редактирование
                                     st.markdown("**✏️ Редактировать показатель**")
