@@ -908,9 +908,16 @@ else:
                                     d_show = daily_results[["biomarker_name", "value", "unit", "reference_min", "reference_max"]].copy()
                                     d_show = d_show.rename(columns={"biomarker_name": "Показатель", "value": "Значение", "unit": "Ед.", "reference_min": "Мин.норма", "reference_max": "Макс.норма"})
                                     
-                                    # Применяем функцию подсветки
-                                    styled_df = d_show.style.apply(highlight_lab_results, axis=1)
-                                    st.dataframe(styled_df, use_container_width=True, hide_index=True)
+                                    # Форматируем числа (убираем лишние нули) и применяем подсветку
+                                    styled_df = d_show.style \
+                                        .format({
+                                            "Значение": "{:g}", 
+                                            "Мин.норма": "{:g}", 
+                                            "Макс.норма": "{:g}"
+                                        }, na_rep="—") \
+                                        .apply(highlight_lab_results, axis=1)
+                                        
+                                    st.dataframe(styled_df, use_container_width=True, hide_index=True))
                                     
                                     # Редактирование
                                     st.markdown("**✏️ Редактировать показатель**")
