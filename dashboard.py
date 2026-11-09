@@ -963,14 +963,24 @@ else:
                     # ==========================================
                     with lab_subtab2:
                         my_docs = load_athlete_documents(selected_aid)
+                        
+                        # Список категорий, которые мы хотим видеть в меню
                         categories = ["Анализы", "Лучевая диагностика", "Функциональные исследования", "Прочее"]
                         
                         doc_categories = {}
                         for cat in categories:
-                            if not my_docs.empty and "category" in my_docs.columns:
-                                docs_in_cat = my_docs[my_docs["category"] == cat]
+                            # Фильтруем документы. Если category = None, кидаем в Прочее
+                            if not my_docs.empty:
+                                # Если колонка category есть, используем её
+                                if "category" in my_docs.columns:
+                                    # Заменяем None на "Прочее"
+                                    my_docs["category"] = my_docs["category"].fillna("Прочее")
+                                    docs_in_cat = my_docs[my_docs["category"] == cat]
+                                else:
+                                    docs_in_cat = pd.DataFrame()
                             else:
                                 docs_in_cat = pd.DataFrame()
+                                
                             if not docs_in_cat.empty:
                                 doc_categories[cat] = docs_in_cat
 
@@ -981,16 +991,38 @@ else:
                                 st.markdown(f"### 📁 {cat_name}")
                                 for _, doc in docs_df.iterrows():
                                     url = get_public_file_url(doc["file_path"])
+                                    
                                     with st.expander(f"📄 {doc['file_name']} (от {pd.to_datetime(doc['upload_date']).strftime('%d.%m.%Y')})"):
                                         st.markdown(f"**Тип:** {doc.get('document_type', '—')}")
                                         if pd.notna(doc.get("comment")):
                                             st.markdown(f"**Комментарий:** {doc['comment']}")
                                         
+                                        # --- ДОБАВИЛИ РЕДАКТИРОВАНИЕ МЕТАДАННЫХ ---
+                                        with st.form(f"edit_doc_meta_{doc['id']}"):
+                                            ec1, ec2 = st.columns(2)
+                                            with ec1:
+                                                new_cat = st.selectbox("Категория", categories, index=categories.index(doc["category"]) if doc["category"] in categories else 3)
+                                                new_date = st.date_input("Дата", value=pd.to_datetime(doc["upload_date"]).date())
+                                            with ec2:
+                                                new_comment = st.text_input("Комментарий", value=doc.get("comment") or "")
+                                            
+                                            if st.form_submit_button("💾 Обновить данные"):
+                                                supabase.table("documents").update({
+                                                    "category": new_cat,
+                                                    "upload_date": new_date.isoformat(),
+                                                    "comment": new_comment.strip() or None
+                                                }).eq("id", doc["id"]).execute()
+                                                st.success("✅ Данные обновлены!")
+                                                st.cache_data.clear()
+                                                st.rerun()
+
+                                        # Ссылка на файл
                                         if url:
                                             st.markdown(f"[📥 Открыть/Скачать PDF]({url})", unsafe_allow_html=True)
                                         else:
                                             st.warning("Файл не найден в хранилище.")
 
+                                        # Кнопка удаления
                                         if st.button("🗑️ Удалить документ", key=f"del_doc_{doc['id']}"):
                                             try:
                                                 supabase.storage.from_("medical_documents").remove([doc["file_path"]])
@@ -1002,8 +1034,8 @@ else:
                                                 st.error(f"Ошибка: {e}")
                                 st.divider()
 
-                        # Форма загрузки нового документа
-                        with st.expander("➕ Загрузить новое обследование (PDF)"):
+                        # Форма загрузки НОВОГО документа
+                        with st.expander("➕ Загрузить новый PDF-файл"):
                             with st.form("new_doc_form", clear_on_submit=True):
                                 d_c1, d_c2 = st.columns(2)
                                 with d_c1:
@@ -1022,16 +1054,18 @@ else:
                                             file_name = uploaded_file.name
                                             file_path = f"{selected_aid}/{file_name}"
                                             
+                                            # Загружаем в Storage
                                             supabase.storage.from_("medical_documents").upload(
                                                 path=file_path,
                                                 file=uploaded_file.getvalue(),
                                                 file_options={"content-type": "application/pdf"}
                                             )
                                             
+                                            # Сохраняем в БД
                                             supabase.table("documents").insert({
                                                 "athlete_id": selected_aid,
                                                 "upload_date": d_date.isoformat(),
-                                                "document_type": d_type if d_type else "Обследование",
+                                                "document_type": d_type if d_type else "Прочее", # Должно совпадать с CHECK
                                                 "category": d_cat,
                                                 "file_path": file_path,
                                                 "file_name": file_name,
