@@ -1114,19 +1114,145 @@ else:
 
                 # 4. ТРАВМЫ
                 with c_inj:
-                    st.subheader("🩹 Травмы")
+                    st.subheader("🩹 Травмы и заболевания")
                     my_i = df_injuries_all[df_injuries_all["athlete_id"] == selected_aid] if not df_injuries_all.empty else pd.DataFrame()
+                    
                     if my_i.empty:
                         st.info("Травм нет.")
                     else:
+                        # 1. Таблица
                         d = my_i[["incident_date", "diagnosis", "body_part", "side", "severity", "days_lost"]].copy()
-                        d = d.rename(columns={"incident_date": "Дата", "diagnosis": "Диагноз", "body_part": "Часть тела", "side": "Сторона", "severity": "Тяжесть", "days_lost": "Пропущено"})
+                        d = d.rename(columns={
+                            "incident_date": "Дата", "diagnosis": "Диагноз", 
+                            "body_part": "Часть тела", "side": "Сторона", 
+                            "severity": "Тяжесть", "days_lost": "Пропущено"
+                        })
                         d["Дата"] = pd.to_datetime(d["Дата"]).dt.strftime('%d.%m.%Y')
                         d = d.fillna("—")
                         st.dataframe(d, use_container_width=True, hide_index=True)
-                    
+
+                        # 2. Редактирование
+                        st.divider()
+                        st.markdown("### ✏️ Редактировать травму")
+                        
+                        inj_options = {"— не выбрано —": None}
+                        for _, r in my_i.iterrows():
+                            label = f"{pd.to_datetime(r['incident_date']).strftime('%d.%m.%Y')} — {r['body_part'] or '—'} ({r['severity'] or '—'})"
+                            inj_options[label] = r['id']
+                            
+                        selected_inj_label = st.selectbox("Выберите травму для изменения", list(inj_options.keys()), key="edit_inj_select")
+                        selected_inj_id = inj_options[selected_inj_label]
+                        
+                        if selected_inj_id:
+                            cur_i = my_i[my_i["id"] == selected_inj_id].iloc[0]
+                            
+                            # Получаем текущие МКБ
+                            current_mkb = get_injury_diagnosis_labels(selected_inj_id)
+                            
+                            with st.form("edit_inj_form"):
+                                e_c1, e_c2 = st.columns(2)
+                                with e_c1:
+                                    e_date = st.date_input("Дата", value=pd.to_datetime(cur_i["incident_date"]).date())
+                                    
+                                    # Выбор МКБ
+                                    selected_diag_ids = render_diagnosis_multiselect(
+                                        label="Диагнозы (МКБ)", 
+                                        default_labels=current_mkb,
+                                        key_suffix=f"edit_inj_{selected_inj_id}"
+                                    )
+                                    
+                                    # Часть тела
+                                    b_opts = {row['name']: row['id'] for _, row in df_body_parts.iterrows()}
+                                    cur_b_name = "— не указана —"
+                                    if pd.notna(cur_i.get("body_part_id")):
+                                        for name, bid in b_opts.items():
+                                            if bid == cur_i["body_part_id"]:
+                                                cur_b_name = name
+                                                break
+                                    e_body = st.selectbox("Часть тела", ["— не указана —"] + list(b_opts.keys()), index=list(b_opts.keys()).index(cur_b_name) + 1 if cur_b_name in b_opts else 0)
+                                with e_c2:
+                                    side_opts = ["Не применимо", "Правая", "Левая"]
+                                    e_side = st.selectbox("Сторона", side_opts, index=side_opts.index(cur_i["side"]) if cur_i["side"] in side_opts else 0)
+                                    sev_opts = ["Легкая", "Средняя", "Тяжелая"]
+                                    e_sev = st.selectbox("Тяжесть", sev_opts, index=sev_opts.index(cur_i["severity"]) if cur_i["severity"] in sev_opts else 0)
+                                
+                                e_mech = st.selectbox("Механизм", ["Не уточнено", "Контакт с соперником", "Падение", "Резкое движение без контакта", "Хроническая перегрузка"], index=0)
+                                e_treat = st.text_area("Лечение", value=cur_i.get("treatment_description") or "")
+                                e_days = st.number_input("Пропущено дней", value=int(cur_i.get("days_lost") or 0), min_value=0)
+                                
+                                col_save, col_del = st.columns([1, 1])
+                                with col_save:
+                                    if st.form_submit_button("💾 Сохранить", type="primary"):
+                                        try:
+                                            supabase.table("injuries_and_illnesses").update({
+                                                "incident_date": e_date.isoformat(),
+                                                "body_part_id": b_opts[e_body] if e_body != "— не указана —" else None,
+                                                "side": e_side, "severity": e_sev, "mechanism": e_mech,
+                                                "treatment_description": e_treat.strip() or None,
+                                                "days_lost": e_days
+                                            }).eq("id", selected_inj_id).execute()
+                                            
+                                            # Обновляем МКБ
+                                            supabase.table("injury_diagnoses").delete().eq("injury_id", selected_inj_id).execute()
+                                            for did in selected_diag_ids:
+                                                supabase.table("injury_diagnoses").insert({
+                                                    "injury_id": selected_inj_id, "diagnosis_id": did
+                                                }).execute()
+                                                
+                                            st.success("✅ Травма обновлена!")
+                                            st.cache_data.clear()
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f"Ошибка: {e}")
+                                with col_del:
+                                    if st.form_submit_button("🗑️ Удалить", type="secondary"):
+                                        supabase.table("injuries_and_illnesses").delete().eq("id", selected_inj_id).execute()
+                                        st.success("✅ Травма удалена!")
+                                        st.cache_data.clear()
+                                        st.rerun()
+
+                    # 3. Добавление
                     with st.expander("➕ Добавить травму"):
-                        st.info("Форма добавления травмы будет здесь.")
+                        with st.form("new_inj_form"):
+                            n_c1, n_c2 = st.columns(2)
+                            with n_c1:
+                                n_date = st.date_input("Дата травмы", value=date.today())
+                                n_diag_ids = render_diagnosis_multiselect(label="Диагнозы (МКБ)", key_suffix=f"new_inj_{selected_aid}")
+                                
+                                # Часть тела
+                                b_opts = {row['name']: row['id'] for _, row in df_body_parts.iterrows()}
+                                n_body = st.selectbox("Часть тела", ["— не указана —"] + list(b_opts.keys()))
+                            with n_c2:
+                                n_side = st.selectbox("Сторона", ["Не применимо", "Правая", "Левая"])
+                                n_sev = st.selectbox("Тяжесть", ["Легкая", "Средняя", "Тяжелая"])
+                                n_mech = st.selectbox("Механизм", ["Не уточнено", "Контакт с соперником", "Падение", "Резкое движение без контакта", "Хроническая перегрузка"])
+                            
+                            n_treat = st.text_area("Лечение")
+                            n_days = st.number_input("Пропущено дней", value=0, min_value=0)
+                            
+                            if st.form_submit_button("💾 Сохранить травму", type="primary"):
+                                try:
+                                    resp = supabase.table("injuries_and_illnesses").insert({
+                                        "athlete_id": selected_aid,
+                                        "incident_date": n_date.isoformat(),
+                                        "body_part_id": b_opts[n_body] if n_body != "— не указана —" else None,
+                                        "side": n_side, "severity": n_sev, "mechanism": n_mech,
+                                        "treatment_description": n_treat.strip() or None,
+                                        "days_lost": n_days
+                                    }).execute()
+                                    
+                                    if resp.data and n_diag_ids:
+                                        new_iid = resp.data[0]["id"]
+                                        for did in n_diag_ids:
+                                            supabase.table("injury_diagnoses").insert({
+                                                "injury_id": new_iid, "diagnosis_id": did
+                                            }).execute()
+                                            
+                                    st.success("✅ Травма сохранена!")
+                                    st.cache_data.clear()
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Ошибка: {e}")
 
                 # 5. ОСМОТРЫ
                 with c_exams:
@@ -1149,35 +1275,233 @@ else:
                 with c_anthro:
                     st.subheader("📏 Антропометрия")
                     my_a = df_anthro[df_anthro["athlete_id"] == selected_aid] if not df_anthro.empty else pd.DataFrame()
+                    
                     if my_a.empty:
                         st.info("Измерений нет.")
                     else:
-                        d = my_a[["measurement_date", "height", "weight", "bmi", "body_fat", "muscle_mass"]].copy()
-                        d = d.rename(columns={"measurement_date": "Дата", "height": "Рост", "weight": "Вес", "bmi": "ИМТ", "body_fat": "% жира", "muscle_mass": "Мышцы"})
+                        # 1. Таблица
+                        d = my_a[["measurement_date", "height", "weight", "bmi", "body_fat", "muscle_mass", "chest_circuit", "thigh_circuit"]].copy()
+                        d = d.rename(columns={
+                            "measurement_date": "Дата", "height": "Рост", "weight": "Вес", 
+                            "bmi": "ИМТ", "body_fat": "% жира", "muscle_mass": "Мышцы",
+                            "chest_circuit": "Грудь", "thigh_circuit": "Бедро"
+                        })
                         d["Дата"] = pd.to_datetime(d["Дата"]).dt.strftime('%d.%m.%Y')
                         st.dataframe(d, use_container_width=True, hide_index=True)
 
-                    # ДОБАВИЛИ КНОПКУ ДЛЯ АНТРОПОМЕТРИИ
-                    with st.expander("➕ Добавить измерение"):
-                        st.info("Форма добавления антропометрии будет здесь.")
+                        # 2. Редактирование
+                        st.divider()
+                        st.markdown("### ✏️ Редактировать измерение")
+                        
+                        anthro_options = {"— не выбрано —": None}
+                        for _, r in my_a.iterrows():
+                            label = f"{pd.to_datetime(r['measurement_date']).strftime('%d.%m.%Y')} — Вес: {r['weight']} кг"
+                            anthro_options[label] = r['id']
+                            
+                        selected_anthro_label = st.selectbox("Выберите измерение для изменения", list(anthro_options.keys()), key="edit_anthro_select")
+                        selected_anthro_id = anthro_options[selected_anthro_label]
+                        
+                        if selected_anthro_id:
+                            cur_a = my_a[my_a["id"] == selected_anthro_id].iloc[0]
+                            
+                            with st.form("edit_anthro_form"):
+                                e_c1, e_c2, e_c3 = st.columns(3)
+                                with e_c1:
+                                    e_date = st.date_input("Дата", value=pd.to_datetime(cur_a["measurement_date"]).date())
+                                    e_h = st.number_input("Рост (см)", value=float(cur_a["height"]) if pd.notna(cur_a["height"]) else 0.0, step=0.5)
+                                with e_c2:
+                                    e_w = st.number_input("Вес (кг)", value=float(cur_a["weight"]) if pd.notna(cur_a["weight"]) else 0.0, step=0.1)
+                                    e_bf = st.number_input("% жира", value=float(cur_a["body_fat"]) if pd.notna(cur_a["body_fat"]) else 0.0, step=0.1)
+                                with e_c3:
+                                    e_mm = st.number_input("Мышцы (кг)", value=float(cur_a["muscle_mass"]) if pd.notna(cur_a["muscle_mass"]) else 0.0, step=0.1)
+                                    e_cc = st.number_input("Обхват груди (см)", value=float(cur_a["chest_circuit"]) if pd.notna(cur_a["chest_circuit"]) else 0.0, step=0.5)
+                                    e_tc = st.number_input("Обхват бедра (см)", value=float(cur_a["thigh_circuit"]) if pd.notna(cur_a["thigh_circuit"]) else 0.0, step=0.5)
+                                
+                                col_save, col_del = st.columns([1, 1])
+                                with col_save:
+                                    if st.form_submit_button("💾 Сохранить", type="primary"):
+                                        try:
+                                            # Пересчитываем ИМТ
+                                            bmi = round(e_w / ((e_h / 100) ** 2), 1) if e_h > 0 and e_w > 0 else None
+                                            
+                                            supabase.table("anthropometry").update({
+                                                "measurement_date": e_date.isoformat(),
+                                                "height": e_h if e_h > 0 else None,
+                                                "weight": e_w if e_w > 0 else None,
+                                                "bmi": bmi,
+                                                "body_fat": e_bf if e_bf > 0 else None,
+                                                "muscle_mass": e_mm if e_mm > 0 else None,
+                                                "chest_circuit": e_cc if e_cc > 0 else None,
+                                                "thigh_circuit": e_tc if e_tc > 0 else None
+                                            }).eq("id", selected_anthro_id).execute()
+                                            st.success("✅ Измерение обновлено!")
+                                            st.cache_data.clear()
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f"Ошибка: {e}")
+                                with col_del:
+                                    if st.form_submit_button("🗑️ Удалить", type="secondary"):
+                                        supabase.table("anthropometry").delete().eq("id", selected_anthro_id).execute()
+                                        st.success("✅ Измерение удалено!")
+                                        st.cache_data.clear()
+                                        st.rerun()
+
+                    # 3. Добавление
+                    with st.expander("➕ Добавить новое измерение"):
+                        with st.form("new_anthro_form"):
+                            a_c1, a_c2, a_c3 = st.columns(3)
+                            with a_c1:
+                                n_date = st.date_input("Дата измерения", value=date.today())
+                                n_h = st.number_input("Рост (см)", value=0.0, step=0.5)
+                            with a_c2:
+                                n_w = st.number_input("Вес (кг)", value=0.0, step=0.1)
+                                n_bf = st.number_input("% жира", value=0.0, step=0.1)
+                            with a_c3:
+                                n_mm = st.number_input("Мышечная масса (кг)", value=0.0, step=0.1)
+                                n_cc = st.number_input("Обхват груди (см)", value=0.0, step=0.5)
+                                n_tc = st.number_input("Обхват бедра (см)", value=0.0, step=0.5)
+                            
+                            if st.form_submit_button("💾 Сохранить измерение", type="primary"):
+                                try:
+                                    bmi = round(n_w / ((n_h / 100) ** 2), 1) if n_h > 0 and n_w > 0 else None
+                                    
+                                    supabase.table("anthropometry").insert({
+                                        "athlete_id": selected_aid,
+                                        "measurement_date": n_date.isoformat(),
+                                        "height": n_h if n_h > 0 else None,
+                                        "weight": n_w if n_w > 0 else None,
+                                        "bmi": bmi,
+                                        "body_fat": n_bf if n_bf > 0 else None,
+                                        "muscle_mass": n_mm if n_mm > 0 else None,
+                                        "chest_circuit": n_cc if n_cc > 0 else None,
+                                        "thigh_circuit": n_tc if n_tc > 0 else None
+                                    }).execute()
+                                    st.success("✅ Измерение сохранено!")
+                                    st.cache_data.clear()
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Ошибка: {e}")
 
                 # 7. ЛЕКАРСТВА
                 with c_meds:
-                    st.subheader("💊 Лекарства")
+                    st.subheader("💊 Назначения лекарств")
                     my_m = df_meds_current[df_meds_current["athlete_id"] == selected_aid] if not df_meds_current.empty else pd.DataFrame()
+                    
                     if my_m.empty:
                         st.info("Назначений нет.")
                     else:
+                        # 1. Таблица
                         d = my_m[["medicine_name", "dosage", "frequency", "course_start", "course_end", "wada_status"]].copy()
-                        d = d.rename(columns={"medicine_name": "Препарат", "dosage": "Дозировка", "frequency": "Кратность", "course_start": "С", "course_end": "По", "wada_status": "WADA"})
+                        d = d.rename(columns={
+                            "medicine_name": "Препарат", "dosage": "Дозировка", 
+                            "frequency": "Кратность", "course_start": "С", 
+                            "course_end": "По", "wada_status": "WADA"
+                        })
                         d["С"] = pd.to_datetime(d["С"]).dt.strftime('%d.%m.%Y')
                         d["По"] = pd.to_datetime(d["По"]).dt.strftime('%d.%m.%Y')
                         d = d.fillna("—")
                         st.dataframe(d, use_container_width=True, hide_index=True)
 
-                    # ДОБАВИЛИ КНОПКУ ДЛЯ ЛЕКАРСТВ
+                        # 2. Редактирование
+                        st.divider()
+                        st.markdown("### ✏️ Редактировать назначение")
+                        
+                        med_options = {"— не выбрано —": None}
+                        for _, r in my_m.iterrows():
+                            label = f"{pd.to_datetime(r['course_start']).strftime('%d.%m.%Y')} — {r['medicine_name']}"
+                            med_options[label] = r['id']
+                            
+                        selected_med_label = st.selectbox("Выберите назначение для изменения", list(med_options.keys()), key="edit_med_select")
+                        selected_med_id = med_options[selected_med_label]
+                        
+                        if selected_med_id:
+                            cur_m = my_m[my_m["id"] == selected_med_id].iloc[0]
+                            
+                            with st.form("edit_med_form"):
+                                e_c1, e_c2 = st.columns(2)
+                                with e_c1:
+                                    # Выбор препарата
+                                    meds_dict = {row['name']: row['id'] for _, row in df_medicines.iterrows()}
+                                    cur_med_name = "— не выбрано —"
+                                    for name, mid in meds_dict.items():
+                                        if mid == cur_m["medicine_id"]:
+                                            cur_med_name = name
+                                            break
+                                    
+                                    e_med = st.selectbox("Препарат", list(meds_dict.keys()), index=list(meds_dict.keys()).index(cur_med_name) if cur_med_name in meds_dict else 0)
+                                    
+                                    e_dosage = st.text_input("Дозировка", value=cur_m.get("dosage") or "")
+                                    e_freq = st.text_input("Кратность (например, 2 раза в день)", value=cur_m.get("frequency") or "")
+                                    
+                                with e_c2:
+                                    e_start = st.date_input("Начало курса", value=pd.to_datetime(cur_m["course_start"]).date())
+                                    e_end = st.date_input("Конец курса", value=pd.to_datetime(cur_m["course_end"]).date())
+                                    
+                                    route_opts = ["Перорально", "Внутримышечно", "Внутривенно", "Местно", "Ингаляционно"]
+                                    e_route = st.selectbox("Способ введения", route_opts, index=route_opts.index(cur_m["administration_route"]) if cur_m.get("administration_route") in route_opts else 0)
+                                
+                                e_notes = st.text_area("Примечания", value=cur_m.get("notes") or "")
+                                
+                                col_save, col_del = st.columns([1, 1])
+                                with col_save:
+                                    if st.form_submit_button("💾 Сохранить", type="primary"):
+                                        try:
+                                            supabase.table("medication_intake").update({
+                                                "medicine_id": meds_dict[e_med],
+                                                "dosage": e_dosage.strip() or None,
+                                                "frequency": e_freq.strip() or None,
+                                                "course_start": e_start.isoformat(),
+                                                "course_end": e_end.isoformat(),
+                                                "administration_route": e_route,
+                                                "notes": e_notes.strip() or None
+                                            }).eq("id", selected_med_id).execute()
+                                            st.success("✅ Назначение обновлено!")
+                                            st.cache_data.clear()
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f"Ошибка: {e}")
+                                with col_del:
+                                    if st.form_submit_button("🗑️ Удалить", type="secondary"):
+                                        supabase.table("medication_intake").delete().eq("id", selected_med_id).execute()
+                                        st.success("✅ Назначение удалено!")
+                                        st.cache_data.clear()
+                                        st.rerun()
+
+                    # 3. Добавление
                     with st.expander("➕ Назначить лекарство"):
-                        st.info("Форма назначения лекарства будет здесь.")
+                        with st.form("new_med_form"):
+                            n_c1, n_c2 = st.columns(2)
+                            with n_c1:
+                                meds_dict = {row['name']: row['id'] for _, row in df_medicines.iterrows()}
+                                n_med = st.selectbox("Препарат *", list(meds_dict.keys()))
+                                
+                                n_dosage = st.text_input("Дозировка (например, 500 мг)")
+                                n_freq = st.text_input("Кратность (например, 2 раза в день)")
+                            with n_c2:
+                                n_start = st.date_input("Начало курса", value=date.today())
+                                n_end = st.date_input("Конец курса", value=date.today() + timedelta(days=7))
+                                n_route = st.selectbox("Способ введения", ["Перорально", "Внутримышечно", "Внутривенно", "Местно", "Ингаляционно"])
+                            
+                            n_notes = st.text_area("Примечания")
+                            
+                            if st.form_submit_button("💾 Сохранить назначение", type="primary"):
+                                try:
+                                    supabase.table("medication_intake").insert({
+                                        "athlete_id": selected_aid,
+                                        "medicine_id": meds_dict[n_med],
+                                        "prescribed_date": date.today().isoformat(),
+                                        "course_start": n_start.isoformat(),
+                                        "course_end": n_end.isoformat(),
+                                        "dosage": n_dosage.strip() or None,
+                                        "frequency": n_freq.strip() or None,
+                                        "administration_route": n_route,
+                                        "notes": n_notes.strip() or None
+                                    }).execute()
+                                    st.success("✅ Лекарство назначено!")
+                                    st.cache_data.clear()
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Ошибка: {e}")
 
                 # 8. ПРИВИВКИ
                 with c_vacc:
