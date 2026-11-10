@@ -701,26 +701,23 @@ else:
                 selected_aid = opts[sel_key]
                 
                 if selected_aid:
-                    # Проверка на просроченный осмотр
                     # --- ПРОВЕРКА НА ПРОСРОЧЕННЫЙ ОСМОТР ---
                     if not df_all_exams.empty:
+                        # Ищем осмотры именно для этой спортсменки
                         my_exams = df_all_exams[df_all_exams["athlete_id"].astype(str) == str(selected_aid)]
+                        
                         if not my_exams.empty:
+                            # Если осмотры есть, берем последний
                             last_exam = my_exams.sort_values("examination_date", ascending=False).iloc[0]
                             next_date = last_exam.get("next_exam_date")
+                            
+                            # Проверяем, не просрочен ли он
                             if pd.notna(next_date) and pd.to_datetime(next_date).date() < date.today():
                                 st.error(f"🔴 **ВНИМАНИЕ!** У спортсменки просрочен медицинский допуск (истек {pd.to_datetime(next_date).strftime('%d.%m.%Y')}). Необходимо пройти осмотр!")
                         else:
                             st.warning("⚠️ У спортсменки нет ни одного медосмотра.")
                     else:
                         st.warning("⚠️ В базе нет ни одного осмотра.")
-                    if not my_exams.empty:
-                        last_exam = my_exams.sort_values("examination_date", ascending=False).iloc[0]
-                        next_date = last_exam.get("next_exam_date")
-                        if pd.notna(next_date) and pd.to_datetime(next_date).date() < date.today():
-                            st.error(f"🔴 **ВНИМАНИЕ!** У спортсменки просрочен медицинский допуск (истек {pd.to_datetime(next_date).strftime('%d.%m.%Y')}). Необходимо пройти осмотр!")
-                    else:
-                        st.warning("⚠️ У спортсменки нет ни одного медосмотра.")
                     # ------------------------------------
                                         
                     row = df_athletes_full[df_athletes_full["id"] == selected_aid].iloc[0]
