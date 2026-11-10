@@ -702,11 +702,18 @@ else:
                 
                 if selected_aid:
                     # Проверка на просроченный осмотр
-                    # --- ВРЕМЕННАЯ ОТЛАДКА ---
-                    st.write("Колонки в df_all_exams:", df_all_exams.columns.tolist())
-                    # -------------------------
-
-                    my_exams = df_all_exams[df_all_exams["athlete_id"].astype(str) == str(selected_aid)]
+                    # --- ПРОВЕРКА НА ПРОСРОЧЕННЫЙ ОСМОТР ---
+                    if not df_all_exams.empty:
+                        my_exams = df_all_exams[df_all_exams["athlete_id"].astype(str) == str(selected_aid)]
+                        if not my_exams.empty:
+                            last_exam = my_exams.sort_values("examination_date", ascending=False).iloc[0]
+                            next_date = last_exam.get("next_exam_date")
+                            if pd.notna(next_date) and pd.to_datetime(next_date).date() < date.today():
+                                st.error(f"🔴 **ВНИМАНИЕ!** У спортсменки просрочен медицинский допуск (истек {pd.to_datetime(next_date).strftime('%d.%m.%Y')}). Необходимо пройти осмотр!")
+                        else:
+                            st.warning("⚠️ У спортсменки нет ни одного медосмотра.")
+                    else:
+                        st.warning("⚠️ В базе нет ни одного осмотра.")
                     if not my_exams.empty:
                         last_exam = my_exams.sort_values("examination_date", ascending=False).iloc[0]
                         next_date = last_exam.get("next_exam_date")
