@@ -394,6 +394,27 @@ def load_lab_results():
         df["reference_max"] = df["dict_biomarkers"].apply(lambda x: x.get("reference_max") if x else None)
         df = df.drop(columns=["athletes", "dict_biomarkers"])
     return df
+
+@st.cache_data(ttl=60)
+def load_today_attendance():
+    """Кто был отмечен на тренировках сегодня"""
+    today = date.today().isoformat()
+    r = supabase.table("session_attendance") \
+        .select("athlete_id, session_id, training_sessions!inner(session_date)") \
+        .eq("training_sessions.session_date", today) \
+        .execute()
+    return pd.DataFrame(r.data) if r.data else pd.DataFrame()
+
+@st.cache_data(ttl=60)
+def load_today_rpe():
+    """Кто поставил оценку за сегодняшние тренировки"""
+    today = date.today().isoformat()
+    r = supabase.table("session_rpe") \
+        .select("athlete_id, session_id, training_sessions!inner(session_date)") \
+        .eq("training_sessions.session_date", today) \
+        .execute()
+    return pd.DataFrame(r.data) if r.data else pd.DataFrame()
+
 def highlight_lab_results(row):
     """Подсвечивает значение: синий — ниже нормы, красный — выше нормы."""
     styles = [""] * len(row)
@@ -465,6 +486,7 @@ def load_doctor_visits():
         )
     return df
 
+
 # ============ ЗАГРУЗКА ============
 df_dashboard = load_today_dashboard()
 df_missing = load_missing_reports()
@@ -491,6 +513,8 @@ df_biomarkers = load_biomarkers()
 df_staff = load_staff()
 df_positions = load_positions()
 df_exam_categories = load_exam_categories()
+df_today_att = load_today_attendance()
+df_today_rpe = load_today_rpe()
 
 # ============ ЗАГОЛОВОК ============
 st.title("🏐 Медицинский дашборд команды")
@@ -611,8 +635,45 @@ else:
 
             df_d_show["Медосмотр"] = df_d_show["ФИО"].apply(check_exam_status)
             
-            # 4. Выводим таблицу
-            cols_order = ["№", "ФИО", "Статус", "Медосмотр", "Причина", "Пульс", "Разница"]
+            # 4. Добавляем колонку "Оценка RPE"
+            def check_rpe_status(aid):
+                if df_today_att.empty:
+                    return "—" # Тренировок сегодня нет
+                
+                # Ищем, был ли он отмечен на тренировке
+                my_att = df_today_att[df_today_att["athlete_id"].astype(str) == str(aid)]
+                if my_att.empty:
+                    return "—" # Не был отмечен
+                
+                # Если был отмечен, проверяем, есть ли оценка
+                # (берем первый session_id, так как обычно тренировка одна)
+                session_ids = my_att["session_id"].tolist()
+                
+                if df_today_rpe.empty:
+                    return "🔴 Должник"
+                
+                my_rpe = df_today_rpe[df_today_rpe["athlete_id"].astype(str) == str(aid)]
+                
+                # Проверяем, есть ли оценка хотя бы для одного session_id
+                rated_sessions = my_rpe["session_id"].tolist()
+                for sid in session_ids:
+                    if sid not in rated_sessions:
+                        return "🔴 Должник"
+                
+                return "✅ Сдал"
+
+            # Находим ID спортсменки по ФИО для проверки
+            def get_rpe_text(full_name):
+                ath_row = df_athletes_full[df_athletes_full["full_name"] == full_name]
+                if ath_row.empty:
+                    return "—"
+                aid = ath_row.iloc[0]["id"]
+                return check_rpe_status(aid)
+
+            df_d_show["Оценка RPE"] = df_d_show["ФИО"].apply(get_rpe_text)
+            
+            # 5. Выводим таблицу (обновляем список колонок)
+            cols_order = ["№", "ФИО", "Статус", "Медосмотр", "Оценка RPE", "Причина", "Пульс", "Разница"]
             df_d_show = df_d_show[[c for c in cols_order if c in df_d_show.columns]]
             
             st.dataframe(df_d_show, use_container_width=True, hide_index=True)
