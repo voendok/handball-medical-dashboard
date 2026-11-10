@@ -638,19 +638,22 @@ else:
         
         # Ищем всех, у кого есть просрочка
         overdue_list = []
-        for _, ath in df_athletes_full.iterrows():
-            aid = ath["id"]
-            my_exams = df_all_exams[df_all_exams["athlete_id"].astype(str) == str(aid)]
-            if not my_exams.empty:
-                last_exam = my_exams.sort_values("examination_date", ascending=False).iloc[0]
-                next_date = last_exam.get("next_exam_date")
-                if pd.notna(next_date) and pd.to_datetime(next_date).date() < date.today():
-                    overdue_list.append({
-                        "№": ath["jersey_number"] if pd.notna(ath["jersey_number"]) else "—",
-                        "ФИО": ath["full_name"],
-                        "Просрочен до": pd.to_datetime(next_date).strftime('%d.%m.%Y'),
-                        "Тип осмотра": last_exam.get("exam_name") or "—"
-                    })
+        
+        # --- ЗАЩИТА ОТ ПУСТОГО ДАТАФРЕЙМА ---
+        if not df_all_exams.empty and "athlete_id" in df_all_exams.columns:
+            for _, ath in df_athletes_full.iterrows():
+                aid = ath["id"]
+                my_exams = df_all_exams[df_all_exams["athlete_id"].astype(str) == str(aid)]
+                if not my_exams.empty:
+                    last_exam = my_exams.sort_values("examination_date", ascending=False).iloc[0]
+                    next_date = last_exam.get("next_exam_date")
+                    if pd.notna(next_date) and pd.to_datetime(next_date).date() < date.today():
+                        overdue_list.append({
+                            "№": ath["jersey_number"] if pd.notna(ath["jersey_number"]) else "—",
+                            "ФИО": ath["full_name"],
+                            "Просрочен до": pd.to_datetime(next_date).strftime('%d.%m.%Y'),
+                            "Тип осмотра": last_exam.get("exam_name") or "—"
+                        })
         
         if overdue_list:
             st.error(f"Спортсменок с просроченным допуском: {len(overdue_list)}")
