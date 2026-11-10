@@ -702,7 +702,7 @@ else:
                 
                 if selected_aid:
                     # Проверка на просроченный осмотр
-                    my_exams = df_all_exams[df_all_exams["athlete_id"] == selected_aid]
+                    my_exams = df_all_exams[df_all_exams["athlete_id"].astype(str) == str(selected_aid)]
                     if not my_exams.empty:
                         last_exam = my_exams.sort_values("examination_date", ascending=False).iloc[0]
                         next_date = last_exam.get("next_exam_date")
