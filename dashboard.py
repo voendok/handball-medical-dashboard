@@ -223,6 +223,12 @@ def load_exam_categories():
     r = supabase.table("dict_exam_categories").select("name").order("id").execute()
     return [row["name"] for row in r.data] if r.data else ["Прочее"]
 
+@st.cache_data(ttl=300)
+def load_athletes_archived():
+    """Загружает список спортсменок, которые в архиве (is_active = False)"""
+    r = supabase.table("athletes").select("id, full_name, jersey_number").eq("is_active", False).order("full_name").execute()
+    return pd.DataFrame(r.data)
+
 # ============ ДАННЫЕ ДАШБОРДА ============
 @st.cache_data(ttl=60)
 def load_today_dashboard():
@@ -592,9 +598,37 @@ else:
     with tab_card:
         st.header("👤 Карточка спортсменки")
         
-        # Переключатель режимов
-        mode = st.radio("Режим работы", ["📋 Выбрать существующую", "➕ Добавить новую"], horizontal=True)
+         # Переключатель режимов
+        mode = st.radio("Режим работы", ["📋 Выбрать существующую", "➕ Добавить новую", "📂 Восстановить из архива"], horizontal=True)
 
+        if mode == "📂 Восстановить из архива":
+            st.subheader("Архив спортсменок")
+            df_archived = load_athletes_archived()
+            
+            if df_archived.empty:
+                st.info("В архиве никого нет.")
+            else:
+                st.warning("Здесь находятся спортсменки, которые были удалены из активного списка.")
+                
+                # Создаем выпадающий список с архивными спортсменками
+                arch_opts = {}
+                for _, row in df_archived.iterrows():
+                    j = int(row['jersey_number']) if pd.notna(row['jersey_number']) else None
+                    label = f"№{j} — {row['full_name']}" if j else row['full_name']
+                    arch_opts[label] = row['id']
+                    
+                selected_arch = st.selectbox("Выберите спортсменку для восстановления", list(arch_opts.keys()))
+                
+                if st.button("♻️ Вернуть в команду", type="primary"):
+                    try:
+                        aid = arch_opts[selected_arch]
+                        supabase.table("athletes").update({"is_active": True}).eq("id", aid).execute()
+                        st.success(f"✅ Спортсменка {selected_arch} возвращена в список!")
+                        st.cache_data.clear()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Ошибка: {e}")
+                        
         if mode == "➕ Добавить новую":
             st.subheader("Новая спортсменка")
             with st.form("form_new_athlete"):
@@ -701,26 +735,39 @@ else:
                             new_allergies = st.text_area("Аллергии", value=row.get("allergies", "") or "", height=68)
                             new_notes = st.text_area("Заметки врача", value=row.get("medical_notes", "") or "", height=68)
                         
-                        if st.form_submit_button("💾 Сохранить изменения", type="primary"):
-                            try:
-                                supabase.table("athletes").update({
-                                    "full_name": new_name.strip(),
-                                    "birth_date": new_bd.isoformat(),
-                                    "jersey_number": int(new_jersey) if new_jersey > 0 else None,
-                                    "position_id": pos_opts[new_pos] if new_pos != "— не выбрано —" else None,
-                                    "blood_type": new_blood.strip() or None,
-                                    "rh_factor": new_rh if new_rh != "— не указан —" else None,
-                                    "phone": new_phone.strip() or None,
-                                    "allergies": new_allergies.strip() or None,
-                                    "medical_notes": new_notes.strip() or None
-                                }).eq("id", selected_aid).execute()
-                                st.success("✅ Профиль обновлен!")
-                                st.cache_data.clear()
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Ошибка: {e}")
-
-                st.divider()
+                        # Две кнопки в один ряд
+                        col_save, col_archive = st.columns([1, 1])
+                        
+                        with col_save:
+                            if st.form_submit_button("💾 Сохранить изменения", type="primary"):
+                                try:
+                                    supabase.table("athletes").update({
+                                        "full_name": new_name.strip(),
+                                        "birth_date": new_bd.isoformat(),
+                                        "jersey_number": int(new_jersey) if new_jersey > 0 else None,
+                                        "position_id": pos_opts[new_pos] if new_pos != "— не выбрано —" else None,
+                                        "blood_type": new_blood.strip() or None,
+                                        "rh_factor": new_rh if new_rh != "— не указан —" else None,
+                                        "phone": new_phone.strip() or None,
+                                        "allergies": new_allergies.strip() or None,
+                                        "medical_notes": new_notes.strip() or None
+                                    }).eq("id", selected_aid).execute()
+                                    st.success("✅ Профиль обновлен!")
+                                    st.cache_data.clear()
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Ошибка: {e}")
+                                    
+                        with col_archive:
+                            # Кнопка архивации (удаления из списка)
+                            if st.form_submit_button("🗑️ Удалить из команды (Архив)", type="secondary"):
+                                try:
+                                    supabase.table("athletes").update({"is_active": False}).eq("id", selected_aid).execute()
+                                    st.success(f"✅ {row.get('full_name')} переведена в архив!")
+                                    st.cache_data.clear()
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Ошибка архивации: {e}")
 
                 # --- ПОДВКЛАДКИ КАРТОЧКИ ---                
                 st.divider()
