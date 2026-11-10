@@ -616,17 +616,6 @@ else:
     # ------------------------------------------
     with tab_card:
         st.header("👤 Карточка спортсменки")
-         # Проверка на просроченный осмотр
-        if selected_aid:
-            # Берем последний осмотр из df_all_exams
-            my_exams = df_all_exams[df_all_exams["athlete_id"] == selected_aid]
-            if not my_exams.empty:
-                last_exam = my_exams.sort_values("examination_date", ascending=False).iloc[0]
-                next_date = last_exam.get("next_exam_date")
-                if pd.notna(next_date) and pd.to_datetime(next_date).date() < date.today():
-                    st.error(f"🔴 **ВНИМАНИЕ!** У спортсменки просрочен медицинский допуск (истек {pd.to_datetime(next_date).strftime('%d.%m.%Y')}). Необходимо пройти осмотр!")
-            else:
-                 st.warning("⚠️ У спортсменки нет ни одного медосмотра.")
          # Переключатель режимов
         mode = st.radio("Режим работы", ["📋 Выбрать существующую", "➕ Добавить новую", "📂 Восстановить из архива"], horizontal=True)
 
@@ -712,6 +701,17 @@ else:
                 selected_aid = opts[sel_key]
                 
                 if selected_aid:
+                    # Проверка на просроченный осмотр
+                    my_exams = df_all_exams[df_all_exams["athlete_id"] == selected_aid]
+                    if not my_exams.empty:
+                        last_exam = my_exams.sort_values("examination_date", ascending=False).iloc[0]
+                        next_date = last_exam.get("next_exam_date")
+                        if pd.notna(next_date) and pd.to_datetime(next_date).date() < date.today():
+                            st.error(f"🔴 **ВНИМАНИЕ!** У спортсменки просрочен медицинский допуск (истек {pd.to_datetime(next_date).strftime('%d.%m.%Y')}). Необходимо пройти осмотр!")
+                    else:
+                        st.warning("⚠️ У спортсменки нет ни одного медосмотра.")
+                    # ------------------------------------
+                                        
                     row = df_athletes_full[df_athletes_full["id"] == selected_aid].iloc[0]
                 
                 # --- ШАПКА КАРТОЧКИ ---
