@@ -183,7 +183,7 @@ def load_athletes_full():
 
 @st.cache_data(ttl=300)
 def load_body_parts():
-    r = supabase.table("dict_body_parts").select("id, name").order("name").execute()
+    r = supabase.table("dict_body_parts").select("id, name").order("id").execute()
     return pd.DataFrame(r.data)
 
 @st.cache_data(ttl=300)
