@@ -563,12 +563,56 @@ else:
             else:
                 df_d = df_dashboard
 
+            # 1. Создаем базовую таблицу
             cols = ["jersey_number", "full_name", "status_text", "reason_text", "last_morning_hr", "last_ortho_diff"]
             av = [c for c in cols if c in df_d.columns]
             df_d_show = df_d[av].rename(columns={
                 "jersey_number": "№", "full_name": "ФИО", "status_text": "Статус",
                 "reason_text": "Причина", "last_morning_hr": "Пульс", "last_ortho_diff": "Разница"
             })
+            
+            if "№" in df_d_show.columns:
+                df_d_show["№"] = df_d_show["№"].apply(lambda x: int(x) if pd.notna(x) else "—")
+            if "Пульс" in df_d_show.columns:
+                df_d_show["Пульс"] = df_d_show["Пульс"].fillna("—")
+            if "Разница" in df_d_show.columns:
+                df_d_show["Разница"] = df_d_show["Разница"].fillna("—")
+
+            # 2. Добавляем колонку "Медосмотр"
+            def check_exam_status(full_name):
+                # Находим ID спортсменки по ФИО
+                ath_row = df_athletes_full[df_athletes_full["full_name"] == full_name]
+                if ath_row.empty:
+                    return "—"
+                aid = ath_row.iloc[0]["id"]
+                
+                # Ищем её осмотры
+                my_exams = df_all_exams[df_all_exams["athlete_id"].astype(str) == str(aid)]
+                
+                if my_exams.empty:
+                    return "⚪ Нет данных"
+                
+                # Берем последний осмотр
+                last_exam = my_exams.sort_values("examination_date", ascending=False).iloc[0]
+                next_date = last_exam.get("next_exam_date")
+                
+                if pd.isna(next_date):
+                    return "⚪ Нет даты"
+                    
+                if pd.to_datetime(next_date).date() < date.today():
+                    return "🔴 Просрочен"
+                elif (pd.to_datetime(next_date).date() - date.today()).days <= 10:
+                    return "🟡 Скоро конец"
+                else:
+                    return "🟢 ОК"
+
+            df_d_show["Медосмотр"] = df_d_show["ФИО"].apply(check_exam_status)
+            
+            # Перемещаем колонку "Медосмотр" на 3-е место (после Причины)
+            cols_order = ["№", "ФИО", "Статус", "Медосмотр", "Причина", "Пульс", "Разница"]
+            df_d_show = df_d_show[[c for c in cols_order if c in df_d_show.columns]]
+
+            st.dataframe(df_d_show, use_container_width=True, hide_index=True)
             if "№" in df_d_show.columns:
                 df_d_show["№"] = df_d_show["№"].apply(lambda x: int(x) if pd.notna(x) else "—")
             if "Пульс" in df_d_show.columns:
