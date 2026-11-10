@@ -545,8 +545,9 @@ else:
         st.subheader("🚦 Статус спортсменок")
         
         if not df_dashboard.empty:
+            # 1. Фильтр (по умолчанию "Все", чтобы видеть всех)
             filt = st.selectbox("Фильтр", [
-                "Только с данными (🟢🟡🔴)", "Все", "🔴 Только красные", 
+                "Все", "Только с данными (🟢🟡🔴)", "🔴 Только красные", 
                 "🟡 Только жёлтые", "🟢 Только зелёные", "⚪ Только без данных"
             ])
             
@@ -563,7 +564,7 @@ else:
             else:
                 df_d = df_dashboard
 
-            # 1. Создаем базовую таблицу
+            # 2. Формируем базовую таблицу
             cols = ["jersey_number", "full_name", "status_text", "reason_text", "last_morning_hr", "last_ortho_diff"]
             av = [c for c in cols if c in df_d.columns]
             df_d_show = df_d[av].rename(columns={
@@ -578,21 +579,18 @@ else:
             if "Разница" in df_d_show.columns:
                 df_d_show["Разница"] = df_d_show["Разница"].fillna("—")
 
-            # 2. Добавляем колонку "Медосмотр"
+            # 3. Добавляем колонку "Медосмотр"
             def check_exam_status(full_name):
-                # Находим ID спортсменки по ФИО
                 ath_row = df_athletes_full[df_athletes_full["full_name"] == full_name]
                 if ath_row.empty:
                     return "—"
                 aid = ath_row.iloc[0]["id"]
                 
-                # Ищем её осмотры
                 my_exams = df_all_exams[df_all_exams["athlete_id"].astype(str) == str(aid)]
                 
                 if my_exams.empty:
                     return "⚪ Нет данных"
                 
-                # Берем последний осмотр
                 last_exam = my_exams.sort_values("examination_date", ascending=False).iloc[0]
                 next_date = last_exam.get("next_exam_date")
                 
@@ -608,43 +606,18 @@ else:
 
             df_d_show["Медосмотр"] = df_d_show["ФИО"].apply(check_exam_status)
             
-            # Перемещаем колонку "Медосмотр" на 3-е место (после Причины)
+            # 4. Выводим таблицу
             cols_order = ["№", "ФИО", "Статус", "Медосмотр", "Причина", "Пульс", "Разница"]
             df_d_show = df_d_show[[c for c in cols_order if c in df_d_show.columns]]
-
-            st.dataframe(df_d_show, use_container_width=True, hide_index=True)
-            if "№" in df_d_show.columns:
-                df_d_show["№"] = df_d_show["№"].apply(lambda x: int(x) if pd.notna(x) else "—")
-            if "Пульс" in df_d_show.columns:
-                df_d_show["Пульс"] = df_d_show["Пульс"].fillna("—")
-            if "Разница" in df_d_show.columns:
-                df_d_show["Разница"] = df_d_show["Разница"].fillna("—")
-                        # Добавляем проверку на просроченные осмотры
-            overdue_ids = []
-            for _, r in df_d.iterrows():
-                aid = r['athlete_id']
-                ath_exams = df_all_exams[df_all_exams["athlete_id"] == aid]
-                if not ath_exams.empty:
-                    last_e = ath_exams.sort_values("examination_date", ascending=False).iloc[0]
-                    nx = last_e.get("next_exam_date")
-                    if pd.notna(nx) and pd.to_datetime(nx).date() < date.today():
-                        overdue_ids.append(aid)
-                else:
-                    overdue_ids.append(aid) # Если осмотров вообще нет — тоже помечаем
             
-            df_d_show["Медосмотр"] = df_d_show["ФИО"].apply(
-                lambda x: "🔴 Просрочен" if any(df_athletes_full[df_athletes_full["full_name"] == x]["id"].isin(overdue_ids)) else "🟢 ОК"
-            )
-            # Перемещаем колонку
-            cols = list(df_d_show.columns)
-            cols.insert(cols.index("Пульс"), cols.pop(cols.index("Медосмотр")))
-            df_d_show = df_d_show[cols]
             st.dataframe(df_d_show, use_container_width=True, hide_index=True)
         else:
             st.info("Нет данных за сегодня.")
 
+        # --- БЛОК "НЕ СДАЛИ УТРЕННИЙ ОТЧЕТ" ---
         st.divider()
         st.subheader("📵 Не сдали утренний отчёт")
+        
         if not df_missing.empty:
             st.warning(f"Не сдали: {len(df_missing)}")
             df_missing_show = df_missing[["jersey_number", "full_name"]].copy()
@@ -653,6 +626,32 @@ else:
             st.dataframe(df_missing_show, use_container_width=True, hide_index=True)
         else:
             st.success("✅ Все сдали!")
+
+        # --- БЛОК "ПРОСРОЧЕННЫЕ ОСМОТРЫ" ---
+        st.divider()
+        st.subheader("⚠️ Просроченные осмотры")
+        
+        # Ищем всех, у кого есть просрочка
+        overdue_list = []
+        for _, ath in df_athletes_full.iterrows():
+            aid = ath["id"]
+            my_exams = df_all_exams[df_all_exams["athlete_id"].astype(str) == str(aid)]
+            if not my_exams.empty:
+                last_exam = my_exams.sort_values("examination_date", ascending=False).iloc[0]
+                next_date = last_exam.get("next_exam_date")
+                if pd.notna(next_date) and pd.to_datetime(next_date).date() < date.today():
+                    overdue_list.append({
+                        "№": ath["jersey_number"] if pd.notna(ath["jersey_number"]) else "—",
+                        "ФИО": ath["full_name"],
+                        "Просрочен до": pd.to_datetime(next_date).strftime('%d.%m.%Y'),
+                        "Тип осмотра": last_exam.get("exam_name") or "—"
+                    })
+        
+        if overdue_list:
+            st.error(f"Спортсменок с просроченным допуском: {len(overdue_list)}")
+            st.dataframe(pd.DataFrame(overdue_list), use_container_width=True, hide_index=True)
+        else:
+            st.success("✅ Просроченных осмотров нет.")
 
 
     # ------------------------------------------
