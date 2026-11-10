@@ -575,7 +575,26 @@ else:
                 df_d_show["Пульс"] = df_d_show["Пульс"].fillna("—")
             if "Разница" in df_d_show.columns:
                 df_d_show["Разница"] = df_d_show["Разница"].fillna("—")
+                        # Добавляем проверку на просроченные осмотры
+            overdue_ids = []
+            for _, r in df_d.iterrows():
+                aid = r['athlete_id']
+                ath_exams = df_all_exams[df_all_exams["athlete_id"] == aid]
+                if not ath_exams.empty:
+                    last_e = ath_exams.sort_values("examination_date", ascending=False).iloc[0]
+                    nx = last_e.get("next_exam_date")
+                    if pd.notna(nx) and pd.to_datetime(nx).date() < date.today():
+                        overdue_ids.append(aid)
+                else:
+                    overdue_ids.append(aid) # Если осмотров вообще нет — тоже помечаем
             
+            df_d_show["Медосмотр"] = df_d_show["ФИО"].apply(
+                lambda x: "🔴 Просрочен" if any(df_athletes_full[df_athletes_full["full_name"] == x]["id"].isin(overdue_ids)) else "🟢 ОК"
+            )
+            # Перемещаем колонку
+            cols = list(df_d_show.columns)
+            cols.insert(cols.index("Пульс"), cols.pop(cols.index("Медосмотр")))
+            df_d_show = df_d_show[cols]
             st.dataframe(df_d_show, use_container_width=True, hide_index=True)
         else:
             st.info("Нет данных за сегодня.")
@@ -597,7 +616,17 @@ else:
     # ------------------------------------------
     with tab_card:
         st.header("👤 Карточка спортсменки")
-        
+         # Проверка на просроченный осмотр
+        if selected_aid:
+            # Берем последний осмотр из df_all_exams
+            my_exams = df_all_exams[df_all_exams["athlete_id"] == selected_aid]
+            if not my_exams.empty:
+                last_exam = my_exams.sort_values("examination_date", ascending=False).iloc[0]
+                next_date = last_exam.get("next_exam_date")
+                if pd.notna(next_date) and pd.to_datetime(next_date).date() < date.today():
+                    st.error(f"🔴 **ВНИМАНИЕ!** У спортсменки просрочен медицинский допуск (истек {pd.to_datetime(next_date).strftime('%d.%m.%Y')}). Необходимо пройти осмотр!")
+            else:
+                 st.warning("⚠️ У спортсменки нет ни одного медосмотра.")
          # Переключатель режимов
         mode = st.radio("Режим работы", ["📋 Выбрать существующую", "➕ Добавить новую", "📂 Восстановить из архива"], horizontal=True)
 
