@@ -1338,20 +1338,153 @@ else:
 
                 # 5. ОСМОТРЫ
                 with c_exams:
-                    st.subheader("🏥 Осмотры")
-                    my_e = df_all_exams[df_all_exams["athlete_id"] == selected_aid] if not df_all_exams.empty else pd.DataFrame()
+                    st.subheader("🏥 Медицинские осмотры")
+                    my_e = df_all_exams[df_all_exams["athlete_id"].astype(str) == str(selected_aid)] if not df_all_exams.empty else pd.DataFrame()
+                    
                     if my_e.empty:
                         st.info("Осмотров нет.")
                     else:
-                        d = my_e[["examination_date", "exam_name", "is_approved", "next_exam_date", "restrictions"]].copy()
-                        d = d.rename(columns={"examination_date": "Дата", "exam_name": "Осмотр", "is_approved": "Допуск", "next_exam_date": "Следующий", "restrictions": "Ограничения"})
+                        # 1. Таблица
+                        d = my_e[["examination_date", "exam_name", "is_approved", "restrictions", "next_exam_date"]].copy()
+                        d = d.rename(columns={
+                            "examination_date": "Дата", "exam_name": "Тип осмотра", 
+                            "is_approved": "Допуск", "restrictions": "Ограничения", 
+                            "next_exam_date": "Следующий"
+                        })
                         d["Дата"] = pd.to_datetime(d["Дата"]).dt.strftime('%d.%m.%Y')
                         d["Следующий"] = pd.to_datetime(d["Следующий"]).dt.strftime('%d.%m.%Y')
+                        
+                        # Красиво отображаем допуск
+                        def format_approval(row):
+                            if row["Допуск"] is True:
+                                return "✅ Допущен" if not row["Ограничения"] else "⚠️ С ограничениями"
+                            return "❌ Не допущен"
+                        
+                        d["Допуск"] = d.apply(format_approval, axis=1)
                         d = d.fillna("—")
                         st.dataframe(d, use_container_width=True, hide_index=True)
+
+                        # 2. Редактирование
+                        st.divider()
+                        st.markdown("### ✏️ Редактировать осмотр")
                         
-                    with st.expander("➕ Добавить осмотр"):
-                        st.info("Форма добавления осмотра будет здесь.")
+                        exam_options = {"— не выбрано —": None}
+                        for _, r in my_e.iterrows():
+                            label = f"{pd.to_datetime(r['examination_date']).strftime('%d.%m.%Y')} — {r['exam_name']}"
+                            exam_options[label] = r['id']
+                            
+                        selected_exam_label = st.selectbox("Выберите осмотр", list(exam_options.keys()), key="edit_exam_select")
+                        selected_exam_id = exam_options[selected_exam_label]
+                        
+                        if selected_exam_id:
+                            cur_e = my_e[my_e["id"] == selected_exam_id].iloc[0]
+                            
+                            with st.form("edit_exam_form"):
+                                e_c1, e_c2 = st.columns(2)
+                                with e_c1:
+                                    e_date = st.date_input("Дата осмотра", value=pd.to_datetime(cur_e["examination_date"]).date())
+                                    
+                                    # Тип осмотра
+                                    t_opts = {row['name']: row['id'] for _, row in df_exam_templates.iterrows()}
+                                    cur_t_name = "— не выбрано —"
+                                    for name, tid in t_opts.items():
+                                        if tid == cur_e["exam_template_id"]:
+                                            cur_t_name = name
+                                            break
+                                    e_type = st.selectbox("Тип осмотра", list(t_opts.keys()), index=list(t_opts.keys()).index(cur_t_name) if cur_t_name in t_opts else 0)
+                                    
+                                with e_c2:
+                                    e_next = st.date_input("Следующий осмотр", value=pd.to_datetime(cur_e["next_exam_date"]).date() if pd.notna(cur_e.get("next_exam_date")) else None)
+                                    
+                                    # Статус допуска
+                                    approval_opts = ["Допущен", "Допущен с ограничениями", "Не допущен"]
+                                    cur_status = "Допущен" if cur_e.get("is_approved") is True and not cur_e.get("restrictions") else ("Допущен с ограничениями" if cur_e.get("is_approved") is True else "Не допущен")
+                                    e_status = st.selectbox("Статус", approval_opts, index=approval_opts.index(cur_status))
+                                
+                                e_result = st.text_area("Заключение", value=cur_e.get("result_text") or "")
+                                e_restrict = st.text_input("Ограничения (если есть)", value=cur_e.get("restrictions") or "")
+                                
+                                # ПРИКРЕПЛЕНИЕ PDF
+                                st.markdown("**Прикрепить скан (PDF)**")
+                                my_docs = load_athlete_documents(selected_aid)
+                                doc_opts = {"— не выбран —": None}
+                                if not my_docs.empty:
+                                    for _, doc in my_docs.iterrows():
+                                        doc_opts[f"{doc['file_name']} ({doc['upload_date']})"] = doc['id']
+                                e_doc = st.selectbox("Выберите файл из хранилища", list(doc_opts.keys()))
+                                
+                                col_save, col_del = st.columns([1, 1])
+                                with col_save:
+                                    if st.form_submit_button("💾 Сохранить", type="primary"):
+                                        try:
+                                            # Логика допуска
+                                            is_appr = e_status in ["Допущен", "Допущен с ограничениями"]
+                                            restrict_text = e_restrict.strip() if e_status == "Допущен с ограничениями" else None
+                                            
+                                            supabase.table("examinations").update({
+                                                "examination_date": e_date.isoformat(),
+                                                "exam_template_id": t_opts[e_type],
+                                                "next_exam_date": e_next.isoformat() if e_next else None,
+                                                "is_approved": is_appr,
+                                                "restrictions": restrict_text,
+                                                "result_text": e_result.strip() or None,
+                                                "document_id": doc_opts[e_doc] if e_doc != "— не выбран —" else None
+                                            }).eq("id", selected_exam_id).execute()
+                                            st.success("✅ Осмотр обновлен!")
+                                            st.cache_data.clear()
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f"Ошибка: {e}")
+                                with col_del:
+                                    if st.form_submit_button("🗑️ Удалить", type="secondary"):
+                                        supabase.table("examinations").delete().eq("id", selected_exam_id).execute()
+                                        st.success("✅ Осмотр удален!")
+                                        st.cache_data.clear()
+                                        st.rerun()
+
+                    # 3. Добавление
+                    with st.expander("➕ Добавить новый осмотр"):
+                        with st.form("new_exam_form"):
+                            n_c1, n_c2 = st.columns(2)
+                            with n_c1:
+                                n_date = st.date_input("Дата осмотра", value=date.today())
+                                t_opts = {row['name']: row['id'] for _, row in df_exam_templates.iterrows()}
+                                n_type = st.selectbox("Тип осмотра", list(t_opts.keys()))
+                            with n_c2:
+                                n_next = st.date_input("Дата следующего осмотра", value=None)
+                                n_status = st.selectbox("Статус", ["Допущен", "Допущен с ограничениями", "Не допущен"])
+                            
+                            n_result = st.text_area("Заключение")
+                            n_restrict = st.text_input("Ограничения (если есть)")
+                            
+                            # ПРИКРЕПЛЕНИЕ PDF
+                            my_docs = load_athlete_documents(selected_aid)
+                            doc_opts = {"— не выбран —": None}
+                            if not my_docs.empty:
+                                for _, doc in my_docs.iterrows():
+                                    doc_opts[f"{doc['file_name']} ({doc['upload_date']})"] = doc['id']
+                            n_doc = st.selectbox("Прикрепить скан (PDF)", list(doc_opts.keys()))
+                            
+                            if st.form_submit_button("💾 Сохранить осмотр", type="primary"):
+                                try:
+                                    is_appr = n_status in ["Допущен", "Допущен с ограничениями"]
+                                    restrict_text = n_restrict.strip() if n_status == "Допущен с ограничениями" else None
+                                    
+                                    supabase.table("examinations").insert({
+                                        "athlete_id": selected_aid,
+                                        "examination_date": n_date.isoformat(),
+                                        "exam_template_id": t_opts[n_type],
+                                        "next_exam_date": n_next.isoformat() if n_next else None,
+                                        "is_approved": is_appr,
+                                        "restrictions": restrict_text,
+                                        "result_text": n_result.strip() or None,
+                                        "document_id": doc_opts[n_doc] if n_doc != "— не выбран —" else None
+                                    }).execute()
+                                    st.success("✅ Осмотр сохранен!")
+                                    st.cache_data.clear()
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Ошибка: {e}")
 
                 # 6. АНТРОПОМЕТРИЯ
                 with c_anthro:
