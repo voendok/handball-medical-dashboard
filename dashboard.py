@@ -673,7 +673,7 @@ else:
             df_d_show["Оценка RPE"] = df_d_show["ФИО"].apply(get_rpe_text)
             
             # 5. Выводим таблицу (обновляем список колонок)
-            cols_order = ["№", "ФИО", "Статус", "Медосмотр", "Оценка RPE", "Причина", "Пульс", "Разница"]
+            cols_order = ["№", "ФИО", "Статус", "Оценка RPE", "Причина", "Пульс", "Разница", "Медосмотр",]
             df_d_show = df_d_show[[c for c in cols_order if c in df_d_show.columns]]
             
             st.dataframe(df_d_show, use_container_width=True, hide_index=True)
