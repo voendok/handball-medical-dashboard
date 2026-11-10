@@ -586,6 +586,11 @@ else:
                     return "—"
                 aid = ath_row.iloc[0]["id"]
                 
+                # --- ЗАЩИТА ОТ ПУСТОГО ДАТАФРЕЙМА ---
+                if df_all_exams.empty or "athlete_id" not in df_all_exams.columns:
+                    return "⚪ Нет данных"
+                # ----------------------------------
+                
                 my_exams = df_all_exams[df_all_exams["athlete_id"].astype(str) == str(aid)]
                 
                 if my_exams.empty:
