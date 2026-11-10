@@ -1405,7 +1405,6 @@ else:
                         d["Дата"] = pd.to_datetime(d["Дата"]).dt.strftime('%d.%m.%Y')
                         d["Следующий"] = pd.to_datetime(d["Следующий"]).dt.strftime('%d.%m.%Y')
                         
-                        # Красиво отображаем допуск
                         def format_approval(row):
                             if row["Допуск"] is True:
                                 return "✅ Допущен" if not row["Ограничения"] else "⚠️ С ограничениями"
@@ -1434,8 +1433,6 @@ else:
                                 e_c1, e_c2 = st.columns(2)
                                 with e_c1:
                                     e_date = st.date_input("Дата осмотра", value=pd.to_datetime(cur_e["examination_date"]).date())
-                                    
-                                    # Тип осмотра
                                     t_opts = {row['name']: row['id'] for _, row in df_exam_templates.iterrows()}
                                     cur_t_name = "— не выбрано —"
                                     for name, tid in t_opts.items():
@@ -1443,11 +1440,8 @@ else:
                                             cur_t_name = name
                                             break
                                     e_type = st.selectbox("Тип осмотра", list(t_opts.keys()), index=list(t_opts.keys()).index(cur_t_name) if cur_t_name in t_opts else 0)
-                                    
                                 with e_c2:
                                     e_next = st.date_input("Следующий осмотр", value=pd.to_datetime(cur_e["next_exam_date"]).date() if pd.notna(cur_e.get("next_exam_date")) else None)
-                                    
-                                    # Статус допуска
                                     approval_opts = ["Допущен", "Допущен с ограничениями", "Не допущен"]
                                     cur_status = "Допущен" if cur_e.get("is_approved") is True and not cur_e.get("restrictions") else ("Допущен с ограничениями" if cur_e.get("is_approved") is True else "Не допущен")
                                     e_status = st.selectbox("Статус", approval_opts, index=approval_opts.index(cur_status))
@@ -1455,23 +1449,43 @@ else:
                                 e_result = st.text_area("Заключение", value=cur_e.get("result_text") or "")
                                 e_restrict = st.text_input("Ограничения (если есть)", value=cur_e.get("restrictions") or "")
                                 
-                                # ПРИКРЕПЛЕНИЕ PDF
+                                # ЗАГРУЗКА PDF
                                 st.markdown("**Прикрепить скан (PDF)**")
-                                my_docs = load_athlete_documents(selected_aid)
-                                doc_opts = {"— не выбран —": None}
-                                if not my_docs.empty:
-                                    for _, doc in my_docs.iterrows():
-                                        doc_opts[f"{doc['file_name']} ({doc['upload_date']})"] = doc['id']
-                                e_doc = st.selectbox("Выберите файл из хранилища", list(doc_opts.keys()))
+                                uploaded_pdf = st.file_uploader("Загрузить новый файл", type=["pdf"], key="edit_exam_pdf")
                                 
                                 col_save, col_del = st.columns([1, 1])
                                 with col_save:
                                     if st.form_submit_button("💾 Сохранить", type="primary"):
                                         try:
-                                            # Логика допуска
                                             is_appr = e_status in ["Допущен", "Допущен с ограничениями"]
                                             restrict_text = e_restrict.strip() if e_status == "Допущен с ограничениями" else None
                                             
+                                            # Если загрузили файл — сохраняем его
+                                            doc_id = cur_e.get("document_id")
+                                            if uploaded_pdf:
+                                                file_name = uploaded_pdf.name
+                                                file_path = f"{selected_aid}/{file_name}"
+                                                
+                                                # Загружаем в Storage
+                                                supabase.storage.from_("medical_documents").upload(
+                                                    path=file_path,
+                                                    file=uploaded_pdf.getvalue(),
+                                                    file_options={"content-type": "application/pdf"}
+                                                )
+                                                # Создаем запись в documents
+                                                resp = supabase.table("documents").insert({
+                                                    "athlete_id": selected_aid,
+                                                    "upload_date": e_date.isoformat(),
+                                                    "document_type": "Заключение врача",
+                                                    "category": "Прочее",
+                                                    "file_path": file_path,
+                                                    "file_name": file_name,
+                                                    "comment": "Скан к осмотру"
+                                                }).execute()
+                                                if resp.data:
+                                                    doc_id = resp.data[0]["id"]
+                                            
+                                            # Обновляем осмотр
                                             supabase.table("examinations").update({
                                                 "examination_date": e_date.isoformat(),
                                                 "exam_template_id": t_opts[e_type],
@@ -1479,8 +1493,9 @@ else:
                                                 "is_approved": is_appr,
                                                 "restrictions": restrict_text,
                                                 "result_text": e_result.strip() or None,
-                                                "document_id": doc_opts[e_doc] if e_doc != "— не выбран —" else None
+                                                "document_id": doc_id
                                             }).eq("id", selected_exam_id).execute()
+                                            
                                             st.success("✅ Осмотр обновлен!")
                                             st.cache_data.clear()
                                             st.rerun()
@@ -1508,19 +1523,39 @@ else:
                             n_result = st.text_area("Заключение")
                             n_restrict = st.text_input("Ограничения (если есть)")
                             
-                            # ПРИКРЕПЛЕНИЕ PDF
-                            my_docs = load_athlete_documents(selected_aid)
-                            doc_opts = {"— не выбран —": None}
-                            if not my_docs.empty:
-                                for _, doc in my_docs.iterrows():
-                                    doc_opts[f"{doc['file_name']} ({doc['upload_date']})"] = doc['id']
-                            n_doc = st.selectbox("Прикрепить скан (PDF)", list(doc_opts.keys()))
+                            # ЗАГРУЗКА PDF
+                            st.markdown("**Прикрепить скан (PDF)**")
+                            uploaded_pdf = st.file_uploader("Загрузить новый файл", type=["pdf"], key="new_exam_pdf")
                             
                             if st.form_submit_button("💾 Сохранить осмотр", type="primary"):
                                 try:
                                     is_appr = n_status in ["Допущен", "Допущен с ограничениями"]
                                     restrict_text = n_restrict.strip() if n_status == "Допущен с ограничениями" else None
                                     
+                                    doc_id = None
+                                    # Если загрузили файл — сначала сохраняем его
+                                    if uploaded_pdf:
+                                        file_name = uploaded_pdf.name
+                                        file_path = f"{selected_aid}/{file_name}"
+                                        
+                                        supabase.storage.from_("medical_documents").upload(
+                                            path=file_path,
+                                            file=uploaded_pdf.getvalue(),
+                                            file_options={"content-type": "application/pdf"}
+                                        )
+                                        resp = supabase.table("documents").insert({
+                                            "athlete_id": selected_aid,
+                                            "upload_date": n_date.isoformat(),
+                                            "document_type": "Заключение врача",
+                                            "category": "Прочее",
+                                            "file_path": file_path,
+                                            "file_name": file_name,
+                                            "comment": "Скан к осмотру"
+                                        }).execute()
+                                        if resp.data:
+                                            doc_id = resp.data[0]["id"]
+                                    
+                                    # Сохраняем осмотр
                                     supabase.table("examinations").insert({
                                         "athlete_id": selected_aid,
                                         "examination_date": n_date.isoformat(),
@@ -1529,8 +1564,9 @@ else:
                                         "is_approved": is_appr,
                                         "restrictions": restrict_text,
                                         "result_text": n_result.strip() or None,
-                                        "document_id": doc_opts[n_doc] if n_doc != "— не выбран —" else None
+                                        "document_id": doc_id
                                     }).execute()
+                                    
                                     st.success("✅ Осмотр сохранен!")
                                     st.cache_data.clear()
                                     st.rerun()
