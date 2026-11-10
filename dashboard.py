@@ -731,7 +731,7 @@ else:
                     "🩹 Травмы", "🏥 Осмотры", "📏 Антропометрия", 
                     "💊 Медикаменты"
                 ])
-                (c_mon, c_visits, c_labs, c_inj, c_exams, c_anthro, c_meds, c_vacc) = c_tabs
+                (c_mon, c_visits, c_labs, c_inj, c_exams, c_anthro, c_meds) = c_tabs
 
                 # 1. МОНИТОРИНГ
                 with c_mon:
