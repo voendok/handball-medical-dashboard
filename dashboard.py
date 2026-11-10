@@ -471,7 +471,6 @@ df_all_exams = load_all_examinations()
 df_injuries = load_injuries(365)
 df_injuries_all = load_injuries_all()
 df_meds_current = load_medications()
-df_vaccinations = load_vaccinations()
 df_anthro = load_anthropometry()
 df_tests = load_functional_tests()
 df_chronic = load_chronic_diseases()
@@ -730,7 +729,7 @@ else:
                 c_tabs = st.tabs([
                     "📊 Мониторинг", "🩺 Приёмы", "🔬 Обследования", 
                     "🩹 Травмы", "🏥 Осмотры", "📏 Антропометрия", 
-                    "💊 Медикаменты", "💉 Прививки"
+                    "💊 Медикаменты"
                 ])
                 (c_mon, c_visits, c_labs, c_inj, c_exams, c_anthro, c_meds, c_vacc) = c_tabs
 
@@ -1502,24 +1501,6 @@ else:
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Ошибка: {e}")
-
-                # 8. ПРИВИВКИ
-                with c_vacc:
-                    st.subheader("💉 Прививки")
-                    my_vac = df_vaccinations[df_vaccinations["athlete_id"] == selected_aid] if not df_vaccinations.empty else pd.DataFrame()
-                    if my_vac.empty:
-                        st.info("Прививок нет.")
-                    else:
-                        d = my_vac[["vaccination_date", "vaccine_name", "booster_date", "batch_number"]].copy()
-                        d = d.rename(columns={"vaccination_date": "Дата", "vaccine_name": "Вакцина", "booster_date": "Ревакцинация", "batch_number": "Серия"})
-                        d["Дата"] = pd.to_datetime(d["Дата"]).dt.strftime('%d.%m.%Y')
-                        d = d.fillna("—")
-                        st.dataframe(d, use_container_width=True, hide_index=True)
-
-                    # ДОБАВИЛИ КНОПКУ ДЛЯ ПРИВИВОК
-                    with st.expander("➕ Добавить прививку"):
-                        st.info("Форма добавления прививки будет здесь.")
-
 
     # ------------------------------------------
     # ВКЛАДКА 3: АНАЛИТИКА
