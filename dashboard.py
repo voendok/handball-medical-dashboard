@@ -702,6 +702,10 @@ else:
                 
                 if selected_aid:
                     # Проверка на просроченный осмотр
+                    # --- ВРЕМЕННАЯ ОТЛАДКА ---
+                    st.write("Колонки в df_all_exams:", df_all_exams.columns.tolist())
+                    # -------------------------
+
                     my_exams = df_all_exams[df_all_exams["athlete_id"].astype(str) == str(selected_aid)]
                     if not my_exams.empty:
                         last_exam = my_exams.sort_values("examination_date", ascending=False).iloc[0]
