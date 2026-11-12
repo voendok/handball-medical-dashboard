@@ -604,11 +604,11 @@ else:
                 df_d_show["Разница"] = df_d_show["Разница"].fillna("—")
 
             # 3. Добавляем колонку "Медосмотр"
-            def check_exam_status(full_name):
-                ath_row = df_athletes_full[df_athletes_full["full_name"] == full_name]
-                if ath_row.empty:
-                    return "—"
-                aid = ath_row.iloc[0]["id"]
+            #def check_exam_status(full_name):
+            #    ath_row = df_athletes_full[df_athletes_full["full_name"] == full_name]
+            #    if ath_row.empty:
+            #        return "—"
+            #    aid = ath_row.iloc[0]["id"]
                 
                 # --- ЗАЩИТА ОТ ПУСТОГО ДАТАФРЕЙМА ---
                 if df_all_exams.empty or "athlete_id" not in df_all_exams.columns:
@@ -673,7 +673,7 @@ else:
             df_d_show["Оценка RPE"] = df_d_show["ФИО"].apply(get_rpe_text)
             
             # 5. Выводим таблицу (обновляем список колонок)
-            cols_order = ["№", "ФИО", "Статус", "Оценка RPE", "Причина", "Пульс", "Разница", "Медосмотр",]
+            cols_order = ["ФИО", "Статус", "Оценка RPE", "Причина", "Пульс", "Разница"]
             df_d_show = df_d_show[[c for c in cols_order if c in df_d_show.columns]]
             
             st.dataframe(df_d_show, use_container_width=True, hide_index=True)
@@ -693,34 +693,61 @@ else:
         else:
             st.success("✅ Все сдали!")
 
-        # --- БЛОК "ПРОСРОЧЕННЫЕ ОСМОТРЫ" ---
+        # --- БЛОК "КОНТРОЛЬ МЕДОСМОТРОВ" ---
         st.divider()
-        st.subheader("⚠️ Просроченные осмотры")
+        st.subheader("🏥 Контроль медосмотров")
         
-        # Ищем всех, у кого есть просрочка
-        overdue_list = []
+        exam_control_list = []
         
-        # --- ЗАЩИТА ОТ ПУСТОГО ДАТАФРЕЙМА ---
-        if not df_all_exams.empty and "athlete_id" in df_all_exams.columns:
-            for _, ath in df_athletes_full.iterrows():
-                aid = ath["id"]
-                my_exams = df_all_exams[df_all_exams["athlete_id"].astype(str) == str(aid)]
-                if not my_exams.empty:
-                    last_exam = my_exams.sort_values("examination_date", ascending=False).iloc[0]
-                    next_date = last_exam.get("next_exam_date")
-                    if pd.notna(next_date) and pd.to_datetime(next_date).date() < date.today():
-                        overdue_list.append({
-                            "№": ath["jersey_number"] if pd.notna(ath["jersey_number"]) else "—",
-                            "ФИО": ath["full_name"],
-                            "Просрочен до": pd.to_datetime(next_date).strftime('%d.%m.%Y'),
-                            "Тип осмотра": last_exam.get("exam_name") or "—"
-                        })
+        # Проходим по всем активным спортсменкам
+        for _, ath in df_athletes_full.iterrows():
+            aid = ath["id"]
+            ath_name = ath["full_name"]
+            
+            # Ищем последний осмотр
+            my_exams = df_all_exams[df_all_exams["athlete_id"].astype(str) == str(aid)] if not df_all_exams.empty else pd.DataFrame()
+            
+            if my_exams.empty:
+                # Осмотров нет вообще
+                exam_control_list.append({
+                    "ФИО": ath_name,
+                    "Следующий осмотр": "—",
+                    "Статус": "⚪ Нет данных"
+                })
+            else:
+                last_exam = my_exams.sort_values("examination_date", ascending=False).iloc[0]
+                next_date = last_exam.get("next_exam_date")
+                
+                if pd.isna(next_date):
+                    exam_control_list.append({
+                        "ФИО": ath_name,
+                        "Следующий осмотр": "—",
+                        "Статус": "⚪ Нет даты"
+                    })
+                else:
+                    days_left = (pd.to_datetime(next_date).date() - date.today()).days
+                    
+                    if days_left < 0:
+                        status = "🔴 Просрочен"
+                    elif days_left <= 10:
+                        status = "🟡 Скоро конец"
+                    else:
+                        status = "🟢 ОК"
+                        
+                    exam_control_list.append({
+                        "ФИО": ath_name,
+                        "Следующий осмотр": pd.to_datetime(next_date).strftime('%d.%m.%Y'),
+                        "Статус": status
+                    })
         
-        if overdue_list:
-            st.error(f"Спортсменок с просроченным допуском: {len(overdue_list)}")
-            st.dataframe(pd.DataFrame(overdue_list), use_container_width=True, hide_index=True)
+        if exam_control_list:
+            df_exams_control = pd.DataFrame(exam_control_list)
+            # Сортируем по ФИО
+            df_exams_control = df_exams_control.sort_values("ФИО")
+            # Выводим таблицу
+            st.dataframe(df_exams_control, use_container_width=True, hide_index=True)
         else:
-            st.success("✅ Просроченных осмотров нет.")
+            st.success("✅ Все спортсменки имеют действующий допуск.")
 
 
     # ------------------------------------------
