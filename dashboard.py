@@ -603,37 +603,6 @@ else:
             if "Разница" in df_d_show.columns:
                 df_d_show["Разница"] = df_d_show["Разница"].fillna("—")
 
-            # 3. Добавляем колонку "Медосмотр"
-            #def check_exam_status(full_name):
-            #    ath_row = df_athletes_full[df_athletes_full["full_name"] == full_name]
-            #    if ath_row.empty:
-            #        return "—"
-            #    aid = ath_row.iloc[0]["id"]
-                
-                # --- ЗАЩИТА ОТ ПУСТОГО ДАТАФРЕЙМА ---
-                if df_all_exams.empty or "athlete_id" not in df_all_exams.columns:
-                    return "⚪ Нет данных"
-                # ----------------------------------
-                
-                my_exams = df_all_exams[df_all_exams["athlete_id"].astype(str) == str(aid)]
-                
-                if my_exams.empty:
-                    return "⚪ Нет данных"
-                
-                last_exam = my_exams.sort_values("examination_date", ascending=False).iloc[0]
-                next_date = last_exam.get("next_exam_date")
-                
-                if pd.isna(next_date):
-                    return "⚪ Нет даты"
-                    
-                if pd.to_datetime(next_date).date() < date.today():
-                    return "🔴 Просрочен"
-                elif (pd.to_datetime(next_date).date() - date.today()).days <= 10:
-                    return "🟡 Скоро конец"
-                else:
-                    return "🟢 ОК"
-
-            df_d_show["Медосмотр"] = df_d_show["ФИО"].apply(check_exam_status)
             
             # 4. Добавляем колонку "Оценка RPE"
             def check_rpe_status(aid):
