@@ -669,9 +669,10 @@ else:
         
         if not df_missing.empty:
             st.warning(f"Не сдали: {len(df_missing)}")
-            df_missing_show = df_missing[["jersey_number", "full_name"]].copy()
-            df_missing_show = df_missing_show.rename(columns={"jersey_number": "№", "full_name": "ФИО"})
-            df_missing_show["№"] = df_missing_show["№"].apply(lambda x: int(x) if pd.notna(x) else "—")
+            df_missing_show = df_missing[["full_name"]].copy()
+            df_missing_show = df_missing_show.rename(columns={"full_name": "ФИО"})
+            df_missing_show = df_missing_show.sort_values("ФИО")
+            
             st.dataframe(df_missing_show, use_container_width=True, hide_index=True)
         else:
             st.success("✅ Все сдали!")
