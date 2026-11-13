@@ -589,34 +589,31 @@ else:
                 df_d = df_dashboard
 
             # 2. Формируем базовую таблицу
-            cols = ["jersey_number", "full_name", "status_text", "reason_text", "last_morning_hr", "last_ortho_diff"]
+            cols = ["full_name", "status_text", "reason_text", "last_morning_hr", "last_ortho_diff"]
             av = [c for c in cols if c in df_d.columns]
             df_d_show = df_d[av].rename(columns={
-                "jersey_number": "№", "full_name": "ФИО", "status_text": "Статус",
+                "full_name": "ФИО", "status_text": "Статус",
                 "reason_text": "Причина", "last_morning_hr": "Пульс", "last_ortho_diff": "Разница"
             })
             
-            # --- СОРТИРОВКА ПО ФИО ---
+            # Сортировка по ФИО
             df_d_show = df_d_show.sort_values("ФИО")
-            # -------------------------
 
             if "Пульс" in df_d_show.columns:
                 df_d_show["Пульс"] = df_d_show["Пульс"].fillna("—")
             if "Разница" in df_d_show.columns:
                 df_d_show["Разница"] = df_d_show["Разница"].fillna("—")
 
-            # --- ФОРМИРУЕМ СТАТУС С КРУЖКОМ ---
+            # Формируем статус с кружком
             def format_status_with_icon(row):
                 status_text = row["Статус"]
                 reason = str(row["Причина"])
                 
-                # Определяем цвет
-                icon = ""
                 if "Красная зона" in reason:
                     icon = "🔴 "
                 elif "Желтая зона" in reason:
                     icon = "🟡 "
-                elif "Нет отчета" in reason or "Нет данных" in reason:
+                elif "Нет отчета" in reason or "Нет данных" in reason or "Нет ни одного отчета" in reason:
                     icon = "⚪ "
                 else:
                     icon = "🟢 "
@@ -624,43 +621,30 @@ else:
                 return f"{icon}{status_text}"
                 
             df_d_show["Статус"] = df_d_show.apply(format_status_with_icon, axis=1)
-            # -----------------------------------
 
-            # 3. Выводим таблицу (убираем "№" из вывода)
-            cols_order = ["ФИО", "Статус", "Причина", "Пульс", "Разница"]
-            df_d_show = df_d_show[[c for c in cols_order if c in df_d_show.columns]]
-            
-            st.dataframe(df_d_show, use_container_width=True, hide_index=True)
-
-            
             # 4. Добавляем колонку "Оценка RPE"
             def check_rpe_status(aid):
                 if df_today_att.empty:
-                    return "—" # Тренировок сегодня нет
+                    return "—" 
                 
-                # Ищем, был ли он отмечен на тренировке
                 my_att = df_today_att[df_today_att["athlete_id"].astype(str) == str(aid)]
                 if my_att.empty:
-                    return "—" # Не был отмечен
+                    return "—" 
                 
-                # Если был отмечен, проверяем, есть ли оценка
-                # (берем первый session_id, так как обычно тренировка одна)
                 session_ids = my_att["session_id"].tolist()
                 
                 if df_today_rpe.empty:
                     return "🔴 Должник"
                 
                 my_rpe = df_today_rpe[df_today_rpe["athlete_id"].astype(str) == str(aid)]
-                
-                # Проверяем, есть ли оценка хотя бы для одного session_id
                 rated_sessions = my_rpe["session_id"].tolist()
+                
                 for sid in session_ids:
                     if sid not in rated_sessions:
                         return "🔴 Должник"
                 
                 return "✅ Сдал"
 
-            # Находим ID спортсменки по ФИО для проверки
             def get_rpe_text(full_name):
                 ath_row = df_athletes_full[df_athletes_full["full_name"] == full_name]
                 if ath_row.empty:
@@ -670,13 +654,14 @@ else:
 
             df_d_show["Оценка RPE"] = df_d_show["ФИО"].apply(get_rpe_text)
             
-            # 5. Выводим таблицу (обновляем список колонок)
+            # 5. Выводим таблицу (ОДИН РАЗ, с правильными колонками)
             cols_order = ["ФИО", "Статус", "Оценка RPE", "Причина", "Пульс", "Разница"]
             df_d_show = df_d_show[[c for c in cols_order if c in df_d_show.columns]]
             
             st.dataframe(df_d_show, use_container_width=True, hide_index=True)
         else:
             st.info("Нет данных за сегодня.")
+       
 
         # --- БЛОК "НЕ СДАЛИ УТРЕННИЙ ОТЧЕТ" ---
         st.divider()
