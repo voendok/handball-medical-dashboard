@@ -195,7 +195,31 @@ def load_diagnoses():
 
 @st.cache_data(ttl=300)
 def load_medicines():
-    r = supabase.table("dict_medicines").select("id, name, wada_status, tue_required").order("name").execute()
+    # Загружаем препараты
+    r = supabase.table("dict_medicines").select("*").order("name").execute()
+    df = pd.DataFrame(r.data)
+    
+    if not df.empty:
+        # Загружаем связи с группами
+        r_links = supabase.table("medicine_group_links").select("medicine_id, dict_medicine_groups(name)").execute()
+        links = r_links.data if r_links.data else []
+        
+        # Группируем группы по препарату
+        groups_map = {}
+        for link in links:
+            mid = link["medicine_id"]
+            gname = link.get("dict_medicine_groups", {}).get("name")
+            if gname:
+                if mid not in groups_map:
+                    groups_map[mid] = []
+                groups_map[mid].append(gname)
+                
+        df["groups"] = df["id"].apply(lambda x: ", ".join(groups_map.get(x, [])))
+    return df
+
+@st.cache_data(ttl=300)
+def load_medicine_groups():
+    r = supabase.table("dict_medicine_groups").select("id, name").order("name").execute()
     return pd.DataFrame(r.data)
 
 @st.cache_data(ttl=300)
@@ -507,6 +531,7 @@ df_visits = load_doctor_visits()
 df_body_parts = load_body_parts()
 df_diagnoses = load_diagnoses()
 df_medicines = load_medicines()
+df_med_groups = load_medicine_groups()
 df_exam_templates = load_exam_templates()
 df_test_types = load_test_types()
 df_biomarkers = load_biomarkers()
@@ -544,8 +569,8 @@ if user_role == "athlete" and user_athlete_id:
 # ==========================================
 else:
     # Создаем 3 ГЛАВНЫЕ ВКЛАДКИ
-    main_tabs = st.tabs(["📊 Обзор команды", "👤 Карточка спортсменки", "📈 Аналитика"])
-    tab_overview, tab_card, tab_analytics = main_tabs
+    main_tabs = st.tabs(["📊 Обзор команды", "👤 Карточка спортсменки", "📈 Аналитика", "⚙️ Справочники"])
+    tab_overview, tab_card, tab_analytics, tab_dicts = main_tabs
 
     # ------------------------------------------
     # ВКЛАДКА 1: ОБЗОР КОМАНДЫ
@@ -1804,8 +1829,13 @@ else:
                                     
                                     e_med = st.selectbox("Препарат", list(meds_dict.keys()), index=list(meds_dict.keys()).index(cur_med_name) if cur_med_name in meds_dict else 0)
                                     
-                                    e_dosage = st.text_input("Дозировка", value=cur_m.get("dosage") or "")
-                                    e_freq = st.text_input("Кратность (например, 2 раза в день)", value=cur_m.get("frequency") or "")
+                                    # Автоподстановка для редактирования (если дозировки нет, берем стандартную)
+                                    cur_med_row = df_medicines[df_medicines["id"] == meds_dict[e_med]].iloc[0]
+                                    def_dosage = cur_m.get("dosage") or cur_med_row.get("standard_dosage") or ""
+                                    def_freq = cur_m.get("frequency") or cur_med_row.get("standard_frequency") or ""
+                                    
+                                    e_dosage = st.text_input("Дозировка", value=def_dosage)
+                                    e_freq = st.text_input("Кратность (например, 2 раза в день)", value=def_freq)
                                     
                                 with e_c2:
                                     e_start = st.date_input("Начало курса", value=pd.to_datetime(cur_m["course_start"]).date())
@@ -1843,14 +1873,22 @@ else:
 
                     # 3. Добавление
                     with st.expander("➕ Назначить лекарство"):
+                        # Получаем список препаратов
+                        meds_dict = {row['name']: row['id'] for _, row in df_medicines.iterrows()}
+                        n_med = st.selectbox("Препарат *", list(meds_dict.keys()), key="new_med_select")
+                        
+                        # Находим выбранный препарат в датафрейме для автоподстановки
+                        cur_med_row = df_medicines[df_medicines["id"] == meds_dict[n_med]].iloc[0] if n_med else None
+                        
+                        # Подставляем стандартные значения, если они есть
+                        default_dosage = cur_med_row.get("standard_dosage", "") if cur_med_row is not None else ""
+                        default_freq = cur_med_row.get("standard_frequency", "") if cur_med_row is not None else ""
+                        
                         with st.form("new_med_form"):
                             n_c1, n_c2 = st.columns(2)
                             with n_c1:
-                                meds_dict = {row['name']: row['id'] for _, row in df_medicines.iterrows()}
-                                n_med = st.selectbox("Препарат *", list(meds_dict.keys()))
-                                
-                                n_dosage = st.text_input("Дозировка (например, 500 мг)")
-                                n_freq = st.text_input("Кратность (например, 2 раза в день)")
+                                n_dosage = st.text_input("Дозировка", value=default_dosage if default_dosage else "")
+                                n_freq = st.text_input("Кратность", value=default_freq if default_freq else "")
                             with n_c2:
                                 n_start = st.date_input("Начало курса", value=date.today())
                                 n_end = st.date_input("Конец курса", value=date.today() + timedelta(days=7))
@@ -1883,3 +1921,105 @@ else:
     with tab_analytics:
         st.header("📈 Аналитика по команде")
         st.info("Здесь будут общие графики: травматизм за сезон, общая динамика пульса и т.д.")
+
+    # ------------------------------------------
+    # ВКЛАДКА 4: СПРАВОЧНИКИ
+    # ------------------------------------------
+    with tab_dicts:
+        st.header("⚙️ Управление справочниками")
+        
+        dict_tabs = st.tabs(["💊 Препараты и группы", "🩺 Коды МКБ"])
+        d_meds, d_mkb = dict_tabs
+        
+        with d_meds:
+            st.subheader("Группы препаратов")
+            with st.expander("➕ Добавить группу"):
+                new_group = st.text_input("Название группы (например, Противовоспалительные)")
+                if st.button("Добавить группу", key="add_group_btn"):
+                    if new_group.strip():
+                        try:
+                            supabase.table("dict_medicine_groups").insert({"name": new_group.strip()}).execute()
+                            st.success(f"Группа '{new_group}' добавлена!")
+                            st.cache_data.clear()
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Ошибка: {e}")
+            
+            st.divider()
+            st.subheader("Препараты")
+            with st.expander("➕ Добавить препарат"):
+                with st.form("new_med_dict_form"):
+                    m_name = st.text_input("Название препарата")
+                    m_wada = st.selectbox("WADA", ["Разрешен", "Запрещен в соревнованиях", "Запрещен всегда"])
+                    m_dosage = st.text_input("Стандартная дозировка")
+                    m_freq = st.text_input("Стандартная кратность")
+                    
+                    # Выбор групп из существующих
+                    if not df_med_groups.empty:
+                        available_groups = df_med_groups["name"].tolist()
+                    else:
+                        available_groups = []
+                        
+                    selected_groups = st.multiselect("Группы", available_groups)
+                    new_groups_text = st.text_input("Новые группы (через запятую, если нет в списке)")
+                    
+                    if st.form_submit_button("💾 Сохранить препарат", type="primary"):
+                        try:
+                            # 1. Сохраняем препарат
+                            resp = supabase.table("dict_medicines").insert({
+                                "name": m_name.strip(),
+                                "wada_status": m_wada,
+                                "standard_dosage": m_dosage.strip() or None,
+                                "standard_frequency": m_freq.strip() or None
+                            }).execute()
+                            
+                            if resp.data:
+                                mid = resp.data[0]["id"]
+                                
+                                # 2. Обрабатываем группы
+                                all_groups = list(selected_groups)
+                                if new_groups_text.strip():
+                                    all_groups.extend([g.strip() for g in new_groups_text.split(",") if g.strip()])
+                                    
+                                for g_name in all_groups:
+                                    # Ищем группу, если нет — создаем
+                                    g_resp = supabase.table("dict_medicine_groups").select("id").eq("name", g_name).execute()
+                                    if g_resp.data:
+                                        gid = g_resp.data[0]["id"]
+                                    else:
+                                        g_new = supabase.table("dict_medicine_groups").insert({"name": g_name}).execute()
+                                        gid = g_new.data[0]["id"]
+                                        
+                                    # Связываем
+                                    supabase.table("medicine_group_links").insert({
+                                        "medicine_id": mid, "group_id": gid
+                                    }).execute()
+                                    
+                            st.success("✅ Препарат сохранен!")
+                            st.cache_data.clear()
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Ошибка: {e}")
+                            
+        with d_mkb:
+            st.subheader("Коды МКБ")
+            with st.expander("➕ Добавить код МКБ"):
+                with st.form("new_mkb_form"):
+                    n_mkb_code = st.text_input("Код МКБ (например, J00)")
+                    n_mkb_name = st.text_input("Название (например, Острый назофарингит)")
+                    n_mkb_class = st.text_input("Класс (например, J)")
+                    n_mkb_class_name = st.text_input("Название класса (например, Болезни органов дыхания)")
+                    
+                    if st.form_submit_button("💾 Сохранить МКБ", type="primary"):
+                        try:
+                            supabase.table("dict_diagnoses").insert({
+                                "mkb_code": n_mkb_code.strip(),
+                                "name": n_mkb_name.strip(),
+                                "mkb_class": n_mkb_class.strip(),
+                                "mkb_class_name": n_mkb_class_name.strip()
+                            }).execute()
+                            st.success("✅ Код МКБ добавлен!")
+                            st.cache_data.clear()
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Ошибка: {e}")
