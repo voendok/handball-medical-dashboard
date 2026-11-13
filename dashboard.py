@@ -1074,43 +1074,36 @@ else:
 
                     # --- ДОБАВЛЕНИЕ ПРИЁМА ---
                     with st.expander("➕ Добавить новый приём"):
+                        # Отдельный блок для добавления нового МКБ (ДО формы!)
+                        with st.expander("🆕 Нет нужного кода МКБ? Добавить сюда"):
+                            nm1, nm2 = st.columns(2)
+                            with nm1:
+                                n_code = st.text_input("Код МКБ", key="new_mkb_code_visit")
+                                n_name = st.text_input("Название", key="new_mkb_name_visit")
+                            with nm2:
+                                n_class = st.text_input("Класс (буква)", key="new_mkb_class_visit")
+                                n_class_name = st.text_input("Название класса", key="new_mkb_classname_visit")
+                            if st.button("💾 Сохранить МКБ", key="btn_save_mkb_visit"):
+                                if n_code.strip() and n_name.strip():
+                                    try:
+                                        supabase.table("dict_diagnoses").insert({
+                                            "mkb_code": n_code.strip(), "name": n_name.strip(),
+                                            "mkb_class": n_class.strip(), "mkb_class_name": n_class_name.strip()
+                                        }).execute()
+                                        st.success("МКБ добавлен! Обновите страницу.")
+                                        st.cache_data.clear()
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Ошибка: {e}")
+
                         with st.form("new_visit_form"):
                             n_date = st.date_input("Дата приёма", value=date.today())
                             n_complaints = st.text_area("Жалобы")
                             
-                            # Выбор МКБ
                             selected_diag_ids = render_diagnosis_multiselect(
                                 label="Диагнозы (МКБ)", 
                                 key_suffix=f"new_visit_{selected_aid}"
                             )
-                            
-                            # --- КНОПКА ДОБАВЛЕНИЯ МКБ ---
-                            if st.form_submit_button("🆕 Добавить новый код МКБ в справочник", type="secondary"):
-                                st.session_state["show_new_mkb_in_visit"] = True
-                                
-                            if st.session_state.get("show_new_mkb_in_visit", False):
-                                st.markdown("**Новый код МКБ:**")
-                                nm1, nm2 = st.columns(2)
-                                with nm1:
-                                    n_code = st.text_input("Код МКБ")
-                                    n_name = st.text_input("Название")
-                                with nm2:
-                                    n_class = st.text_input("Класс (буква)")
-                                    n_class_name = st.text_input("Название класса")
-                                if st.button("💾 Сохранить МКБ"):
-                                    if n_code.strip() and n_name.strip():
-                                        try:
-                                            supabase.table("dict_diagnoses").insert({
-                                                "mkb_code": n_code.strip(), "name": n_name.strip(),
-                                                "mkb_class": n_class.strip(), "mkb_class_name": n_class_name.strip()
-                                            }).execute()
-                                            st.success("МКБ добавлен! Обновите страницу, чтобы он появился в списке.")
-                                            st.cache_data.clear()
-                                            st.session_state["show_new_mkb_in_visit"] = False
-                                            st.rerun()
-                                        except Exception as e:
-                                            st.error(f"Ошибка: {e}")
-                            
                             n_diagnosis_text = st.text_input("Диагноз (текстом, если нет в МКБ)")
                             n_prescriptions = st.text_input("Назначения")
                             n_recs = st.text_area("Рекомендации")
