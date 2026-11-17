@@ -1980,72 +1980,201 @@ else:
         d_meds, d_mkb = dict_tabs
         
         with d_meds:
-            # === ПРОСМОТР И УПРАВЛЕНИЕ ПРЕПАРАТАМИ ===
-            st.subheader("📋 Справочник препаратов")
-            if not df_medicines.empty:
-                # Выводим таблицу с возможностью удаления (через чекбоксы)
-                st.dataframe(df_medicines[["name", "wada_status", "standard_dosage", "standard_frequency", "groups"]].rename(columns={
-                    "name": "Название", "wada_status": "WADA", 
-                    "standard_dosage": "Дозировка", "standard_frequency": "Кратность", "groups": "Группы"
-                }), use_container_width=True, hide_index=True)
-            else:
-                st.info("Справочник пуст.")
+            # === УПРАВЛЕНИЕ ГРУППАМИ ===
+            st.subheader("📁 Группы препаратов")
             
-            with st.expander("➕ Добавить препарат"):
-                with st.form("new_med_dict_form"):
-                    m_name = st.text_input("Название препарата")
-                    m_wada = st.selectbox("WADA", ["Разрешен", "Запрещен в соревнованиях", "Запрещен всегда"])
-                    m_dosage = st.text_input("Стандартная дозировка")
-                    m_freq = st.text_input("Стандартная кратность")
-                    
-                    if not df_med_groups.empty:
-                        available_groups = df_med_groups["name"].tolist()
-                    else:
-                        available_groups = []
-                        
-                    selected_groups = st.multiselect("Группы", available_groups)
-                    new_groups_text = st.text_input("Новые группы (через запятую, если нет в списке)")
-                    
-                    if st.form_submit_button("💾 Сохранить препарат", type="primary"):
+            # 1. Просмотр и удаление групп
+            if not df_med_groups.empty:
+                for _, g in df_med_groups.iterrows():
+                    g_col1, g_col2 = st.columns([4, 1])
+                    with g_col1:
+                        st.markdown(f"**{g['name']}**")
+                    with g_col2:
+                        if st.button("🗑️", key=f"del_group_{g['id']}"):
+                            try:
+                                # Удаляем группу (связи удалятся каскадно)
+                                supabase.table("dict_medicine_groups").delete().eq("id", g['id']).execute()
+                                st.success(f"Группа '{g['name']}' удалена!")
+                                st.cache_data.clear()
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Ошибка: {e}")
+            else:
+                st.info("Групп нет.")
+            
+            # 2. Добавление группы
+            with st.expander("➕ Добавить группу"):
+                new_group = st.text_input("Название группы (например, Противовоспалительные)", key="add_group_input")
+                if st.button("Добавить группу", key="add_group_btn"):
+                    if new_group.strip():
                         try:
-                            resp = supabase.table("dict_medicines").insert({
-                                "name": m_name.strip(),
-                                "wada_status": m_wada,
-                                "standard_dosage": m_dosage.strip() or None,
-                                "standard_frequency": m_freq.strip() or None
-                            }).execute()
-                            
-                            if resp.data:
-                                mid = resp.data[0]["id"]
-                                all_groups = list(selected_groups)
-                                if new_groups_text.strip():
-                                    all_groups.extend([g.strip() for g in new_groups_text.split(",") if g.strip()])
-                                    
-                                for g_name in all_groups:
-                                    g_resp = supabase.table("dict_medicine_groups").select("id").eq("name", g_name).execute()
-                                    if g_resp.data:
-                                        gid = g_resp.data[0]["id"]
-                                    else:
-                                        g_new = supabase.table("dict_medicine_groups").insert({"name": g_name}).execute()
-                                        gid = g_new.data[0]["id"]
-                                    supabase.table("medicine_group_links").insert({"medicine_id": mid, "group_id": gid}).execute()
-                                    
-                            st.success("✅ Препарат сохранен!")
+                            supabase.table("dict_medicine_groups").insert({"name": new_group.strip()}).execute()
+                            st.success(f"Группа '{new_group}' добавлена!")
                             st.cache_data.clear()
                             st.rerun()
                         except Exception as e:
-                            st.error(f"Ошибка: {e}")
+                            st.error(f"Ошибка (возможно, группа уже есть): {e}")
+            
+            st.divider()
+
+            # === ПРЕПАРАТЫ ===
+            st.subheader("📋 Справочник препаратов")
+            
+            # Фильтр по группам
+            if not df_med_groups.empty:
+                group_filter = st.selectbox(
+                    "Фильтр по группе", 
+                    ["Все"] + df_med_groups["name"].tolist(),
+                    key="group_filter_med"
+                )
+            else:
+                group_filter = "Все"
+
+            # Применяем фильтр
+            df_meds_filtered = df_medicines.copy()
+            if group_filter != "Все" and not df_medicines.empty:
+                # Оставляем только те препараты, у которых в поле groups есть выбранная группа
+                df_meds_filtered = df_meds_filtered[df_meds_filtered["groups"].str.contains(group_filter, na=False)]
+            
+            if df_meds_filtered.empty:
+                st.info("Препаратов нет (или нет в выбранной группе).")
+            else:
+                # Выводим таблицу
+                st.dataframe(
+                    df_meds_filtered[["name", "wada_status", "standard_dosage", "standard_frequency", "groups"]].rename(columns={
+                        "name": "Название", "wada_status": "WADA", 
+                        "standard_dosage": "Дозировка", "standard_frequency": "Кратность", "groups": "Группы"
+                    }), 
+                    use_container_width=True, hide_index=True
+                )
+                
+                # Редактирование препарата (в отдельном expander)
+                with st.expander("✏️ Редактировать / Удалить препарат"):
+                    med_options = {row['name']: row['id'] for _, row in df_meds_filtered.iterrows()}
+                    sel_med_name = st.selectbox("Выберите препарат", list(med_options.keys()), key="edit_dict_med")
+                    
+                    if sel_med_name:
+                        cur_med = df_medicines[df_medicines["id"] == med_options[sel_med_name]].iloc[0]
+                        
+                        with st.form("edit_med_dict_form"):
+                            em_name = st.text_input("Название", value=cur_med.get("name", ""))
+                            em_wada = st.selectbox("WADA", ["Разрешен", "Запрещен в соревнованиях", "Запрещен всегда"], index=["Разрешен", "Запрещен в соревнованиях", "Запрещен всегда"].index(cur_med.get("wada_status", "Разрешен")))
+                            em_dosage = st.text_input("Стандартная дозировка", value=cur_med.get("standard_dosage") or "")
+                            em_freq = st.text_input("Стандартная кратность", value=cur_med.get("standard_frequency") or "")
+                            
+                            # Группы
+                            if not df_med_groups.empty:
+                                all_group_names = df_med_groups["name"].tolist()
+                                # Текущие группы препарата (из строки через запятую)
+                                cur_groups_str = cur_med.get("groups") or ""
+                                cur_groups_list = [g.strip() for g in cur_groups_str.split(",") if g.strip()]
+                                
+                                em_groups = st.multiselect("Группы", all_group_names, default=[g for g in cur_groups_list if g in all_group_names])
+                            else:
+                                em_groups = []
+                            
+                            col_save, col_del = st.columns([1, 1])
+                            
+                            with col_save:
+                                if st.form_submit_button("💾 Сохранить изменения", type="primary"):
+                                    try:
+                                        # 1. Обновляем препарат
+                                        supabase.table("dict_medicines").update({
+                                            "name": em_name.strip(),
+                                            "wada_status": em_wada,
+                                            "standard_dosage": em_dosage.strip() or None,
+                                            "standard_frequency": em_freq.strip() or None
+                                        }).eq("id", cur_med["id"]).execute()
+                                        
+                                        # 2. Обновляем группы (удаляем старые, вставляем новые)
+                                        supabase.table("medicine_group_links").delete().eq("medicine_id", cur_med["id"]).execute()
+                                        for g_name in em_groups:
+                                            g_resp = supabase.table("dict_medicine_groups").select("id").eq("name", g_name).execute()
+                                            if g_resp.data:
+                                                gid = g_resp.data[0]["id"]
+                                                supabase.table("medicine_group_links").insert({"medicine_id": cur_med["id"], "group_id": gid}).execute()
+                                                
+                                        st.success("✅ Препарат обновлен!")
+                                        st.cache_data.clear()
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Ошибка: {e}")
+                                        
+                            with col_del:
+                                if st.form_submit_button("🗑️ Удалить препарат", type="secondary"):
+                                    try:
+                                        supabase.table("dict_medicines").delete().eq("id", cur_med["id"]).execute()
+                                        st.success("✅ Препарат удален!")
+                                        st.cache_data.clear()
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Ошибка: {e}")
                             
         with d_mkb:
-            # === ПРОСМОТР И УПРАВЛЕНИЕ МКБ ===
             st.subheader("📋 Справочник МКБ")
-            if not df_diagnoses.empty:
-                st.dataframe(df_diagnoses[["mkb_code", "name", "mkb_class", "mkb_class_name"]].rename(columns={
-                    "mkb_code": "Код", "name": "Название", "mkb_class": "Класс", "mkb_class_name": "Название класса"
-                }), use_container_width=True, hide_index=True)
-            else:
+            
+            if df_diagnoses.empty:
                 st.info("Справочник пуст.")
+            else:
+                # Фильтр по классу
+                class_filter = st.selectbox(
+                    "Фильтр по классу", 
+                    ["Все"] + sorted(df_diagnoses["mkb_class"].dropna().unique().tolist()),
+                    key="class_filter_mkb"
+                )
                 
+                df_mkb_filtered = df_diagnoses.copy()
+                if class_filter != "Все":
+                    df_mkb_filtered = df_mkb_filtered[df_mkb_filtered["mkb_class"] == class_filter]
+                
+                st.dataframe(
+                    df_mkb_filtered[["mkb_code", "name", "mkb_class", "mkb_class_name"]].rename(columns={
+                        "mkb_code": "Код", "name": "Название", "mkb_class": "Класс", "mkb_class_name": "Название класса"
+                    }), 
+                    use_container_width=True, hide_index=True
+                )
+                
+                # Редактирование МКБ
+                with st.expander("✏️ Редактировать / Удалить код МКБ"):
+                    mkb_options = {f"{row['mkb_code']} — {row['name']}": row['id'] for _, row in df_mkb_filtered.iterrows()}
+                    sel_mkb = st.selectbox("Выберите код МКБ", list(mkb_options.keys()), key="edit_dict_mkb")
+                    
+                    if sel_mkb:
+                        cur_mkb = df_diagnoses[df_diagnoses["id"] == mkb_options[sel_mkb]].iloc[0]
+                        
+                        with st.form("edit_mkb_form"):
+                            em_code = st.text_input("Код МКБ", value=cur_mkb.get("mkb_code", ""))
+                            em_name = st.text_input("Название", value=cur_mkb.get("name", ""))
+                            em_class = st.text_input("Класс", value=cur_mkb.get("mkb_class", ""))
+                            em_class_name = st.text_input("Название класса", value=cur_mkb.get("mkb_class_name", ""))
+                            
+                            col_save, col_del = st.columns([1, 1])
+                            with col_save:
+                                if st.form_submit_button("💾 Сохранить", type="primary"):
+                                    try:
+                                        supabase.table("dict_diagnoses").update({
+                                            "mkb_code": em_code.strip(),
+                                            "name": em_name.strip(),
+                                            "mkb_class": em_class.strip(),
+                                            "mkb_class_name": em_class_name.strip()
+                                        }).eq("id", cur_mkb["id"]).execute()
+                                        st.success("✅ МКБ обновлен!")
+                                        st.cache_data.clear()
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Ошибка: {e}")
+                                        
+                            with col_del:
+                                if st.form_submit_button("🗑️ Удалить", type="secondary"):
+                                    try:
+                                        supabase.table("dict_diagnoses").delete().eq("id", cur_mkb["id"]).execute()
+                                        st.success("✅ МКБ удален!")
+                                        st.cache_data.clear()
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Ошибка: {e}")
+            
+            # Добавление МКБ
             with st.expander("➕ Добавить код МКБ"):
                 with st.form("new_mkb_form"):
                     n_mkb_code = st.text_input("Код МКБ (например, J00)")
