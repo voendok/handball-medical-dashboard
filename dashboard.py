@@ -68,6 +68,9 @@ def athlete_options_dict():
     df_a = load_athletes()
     opts = {}
     if not df_a.empty:
+        # Сортируем по ФИО
+        df_a = df_a.sort_values("full_name")
+        
         for _, row in df_a.iterrows():
             j = int(row['jersey_number']) if pd.notna(row['jersey_number']) else None
             label = f"№{j} — {row['full_name']}" if j else f"(без номера) {row['full_name']}"
@@ -173,7 +176,7 @@ def get_visit_diagnosis_labels(visit_id):
 # ============ СПРАВОЧНИКИ ============
 @st.cache_data(ttl=300)
 def load_athletes():
-    r = supabase.table("athletes").select("id, full_name, jersey_number").eq("is_active", True).order("jersey_number").execute()
+    r = supabase.table("athletes").select("id, full_name, jersey_number").eq("is_active", True).order("full_name").execute()
     return pd.DataFrame(r.data)
 
 @st.cache_data(ttl=60)
